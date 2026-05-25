@@ -1,5 +1,11 @@
 import { containsBigram } from "../shared/bigrams";
-import { GENERATED_LINE_COUNT, LAYOUT_FINGERPRINT, TOP_N_WEAK } from "../shared/constants";
+import {
+  DEFAULT_CONTEXT,
+  GENERATED_LINE_COUNT,
+  LAYOUT_FINGERPRINT,
+  TOP_N_WEAK,
+  type Context,
+} from "../shared/constants";
 import type { PracticeMode } from "../shared/types";
 import { getCorpus, type CorpusItem } from "./corpus";
 import { rankWeakBigrams } from "./weakness";
@@ -42,11 +48,15 @@ export function generateText(
   mode: PracticeMode,
   count: number = GENERATED_LINE_COUNT,
   fp: string = LAYOUT_FINGERPRINT,
+  context: Context = DEFAULT_CONTEXT,
 ): GeneratedText {
-  const corpus = getCorpus(db, "prompts");
+  const corpus = getCorpus(db, context);
   if (corpus.length === 0) return { mode, targetedBigrams: [], lines: [], text: "" };
 
   if (mode === "targeted") {
+    // Weak bigrams are GLOBAL, not per-context (decision D2), so for symbol-heavy
+    // contexts (cli/code) the weak-bigram ∩ corpus is frequently empty and targeted
+    // degrades to the random fallback below — intended for v1.1, not a defect (D9).
     const weak = rankWeakBigrams(db, fp).slice(0, TOP_N_WEAK);
     if (weak.length > 0) {
       const weakUnits = weak.map((w) => w.unit);

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PracticeMode, Recommendation, WeakUnit } from "../../shared/types";
+import { type Context, CONTEXT_LABELS } from "../../shared/constants";
 import { api } from "../api";
 
 function unitLabel(u: string): string {
@@ -22,7 +23,8 @@ function Chips({ units }: { units: WeakUnit[] }) {
   );
 }
 
-export function RecommenderCard({ onStart }: { onStart: (mode: PracticeMode) => void }) {
+export function RecommenderCard({ onStart, context }: { onStart: (mode: PracticeMode) => void; context?: Context }) {
+  const contextLabel = context ? CONTEXT_LABELS[context] : "prompts";
   const [rec, setRec] = useState<Recommendation | null>(null);
   const [error, setError] = useState(false);
 
@@ -82,7 +84,7 @@ export function RecommenderCard({ onStart }: { onStart: (mode: PracticeMode) => 
           onClick={() => onStart("random")}
           className="rounded border border-ink-border px-4 py-2 text-ink-text hover:bg-ink-bg"
         >
-          {rec && rec.hasEnoughData ? "ignore — random prompts" : "start with random prompts"}
+          {rec && rec.hasEnoughData ? `ignore — random ${contextLabel}` : `start with random ${contextLabel}`}
         </button>
       </div>
     </div>

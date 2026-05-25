@@ -5,6 +5,7 @@ import type {
   SessionPayload,
   SessionRow,
 } from "../shared/types";
+import type { Context } from "../shared/constants";
 import type { GeneratedText } from "../server/generator";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -14,7 +15,8 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 export const api = {
-  text: (mode: PracticeMode) => getJson<GeneratedText>(`/api/text?mode=${mode}`),
+  text: (mode: PracticeMode, context: Context) =>
+    getJson<GeneratedText>(`/api/text?mode=${mode}&context=${context}`),
   history: () => getJson<HistoryEntry[]>("/api/history"),
   recommendation: () => getJson<Recommendation>("/api/recommendation"),
   async saveSession(payload: SessionPayload): Promise<SessionRow> {

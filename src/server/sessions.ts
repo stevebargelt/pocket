@@ -4,7 +4,7 @@ import type {
   SessionPayload,
   SessionRow,
 } from "../shared/types";
-import { CHARS_PER_WORD, LAYOUT_FINGERPRINT } from "../shared/constants";
+import { CHARS_PER_WORD, DEFAULT_CONTEXT, LAYOUT_FINGERPRINT } from "../shared/constants";
 import { computeMetrics } from "../shared/metrics";
 import { updateAggregatesIncremental, writeSessionKeyStats } from "./aggregate";
 import type { Db } from "./db";
@@ -25,6 +25,7 @@ export function saveSession(db: Db, payload: SessionPayload): SessionRow {
   const metrics = computeMetrics(payload.keystrokes, elapsedMs);
   const targetWords = Math.round(payload.targetChars / CHARS_PER_WORD);
   const fp = LAYOUT_FINGERPRINT;
+  const context = payload.context ?? DEFAULT_CONTEXT;
 
   const insertSession = db.prepare(
     `INSERT INTO sessions
@@ -40,7 +41,7 @@ export function saveSession(db: Db, payload: SessionPayload): SessionRow {
     const info = insertSession.run(
       payload.startedAt,
       payload.endedAt,
-      "prompts",
+      context,
       fp,
       payload.mode,
       metrics.wpm,

@@ -9,6 +9,7 @@ import { openDb } from "../src/server/db";
 import { seedCorpus } from "../src/server/corpus";
 import { createApiRouter } from "../src/server/routes";
 import type { GeneratedText } from "../src/server/generator";
+import { CONTEXTS } from "../src/shared/constants";
 import type { HistoryEntry, KeystrokeRecord, Recommendation, SessionRow } from "../src/shared/types";
 
 function startServer(): Promise<{ close: () => void; base: string }> {
@@ -70,6 +71,59 @@ test("e2e: start a session, type, save, and see it in history", async () => {
     // 5. recommender responds and is labeled a heuristic
     const rec = (await (await fetch(`${base}/api/recommendation`)).json()) as Recommendation;
     assert.equal(rec.isHeuristic, true);
+  } finally {
+    close();
+  }
+});
+
+test("e2e: every context round-trips text -> save -> history with the right tag", async () => {
+  const { close, base } = await startServer();
+  try {
+    for (const context of CONTEXTS) {
+      // start: fetch practice text for this context (corpus must be seeded for each)
+      const text = (await (
+        await fetch(`${base}/api/text?mode=random&context=${context}`)
+      ).json()) as GeneratedText;
+      assert.ok(text.text.length > 0, `got practice text for ${context}`);
+
+      // type a few correct keystrokes (CLI lines can be short, so cap to the text length)
+      const sample = text.text.slice(0, Math.min(20, text.text.length));
+      const keystrokes: KeystrokeRecord[] = Array.from(sample).map((c, i) => ({
+        index: i,
+        expectedChar: c,
+        actualChar: c,
+        latencyMs: 100,
+        correct: true,
+      }));
+
+      // save, tagged with the same context
+      const saveRes = await fetch(`${base}/api/session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startedAt: 0,
+          endedAt: 60_000,
+          mode: "random",
+          context,
+          targetSeconds: 60,
+          targetChars: sample.length,
+          keystrokes,
+        }),
+      });
+      assert.equal(saveRes.status, 201, `session saved for ${context}`);
+      const saved = (await saveRes.json()) as SessionRow;
+      assert.equal(saved.context, context, `saved row carries ${context}`);
+    }
+
+    // history holds exactly one row per context, each tagged correctly
+    const history = (await (await fetch(`${base}/api/history`)).json()) as HistoryEntry[];
+    assert.equal(history.length, CONTEXTS.length, "one history row per context");
+    for (const context of CONTEXTS) {
+      assert.ok(
+        history.some((h) => h.context === context),
+        `history has a row tagged ${context}`,
+      );
+    }
   } finally {
     close();
   }

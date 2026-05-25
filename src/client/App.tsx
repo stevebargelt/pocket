@@ -1,9 +1,11 @@
 import { useCallback, useState } from "react";
 import type { PracticeMode } from "../shared/types";
+import type { Context } from "../shared/constants";
 import type { GeneratedText } from "./api";
 import { api } from "./api";
 import { loadSettings, saveSettings, type Settings, type Theme } from "./settings";
 import { RecommenderCard } from "./recommender/RecommenderCard";
+import { ContextPicker } from "./session/ContextPicker";
 import { TypingSurface, type SessionResult } from "./session/TypingSurface";
 import { ResultsScreen } from "./session/ResultsScreen";
 import { HistoryView } from "./history/HistoryView";
@@ -74,21 +76,34 @@ export default function App() {
   const [view, setView] = useState<View>("practice");
   const [phase, setPhase] = useState<Phase>("idle");
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
+  const [selectedContext, setSelectedContext] = useState<Context>(() => settings.context);
   const [generated, setGenerated] = useState<GeneratedText | null>(null);
   const [mode, setMode] = useState<PracticeMode>("random");
   const [result, setResult] = useState<SessionResult | null>(null);
 
-  const startSession = useCallback(async (m: PracticeMode) => {
-    setMode(m);
-    setPhase("loading");
-    const text = await api.text(m);
-    setGenerated(text);
-    setPhase("typing");
-  }, []);
+  const startSession = useCallback(
+    async (m: PracticeMode) => {
+      setMode(m);
+      setPhase("loading");
+      const text = await api.text(m, selectedContext);
+      setGenerated(text);
+      setPhase("typing");
+    },
+    [selectedContext],
+  );
 
   const onSettingsChange = useCallback((s: Settings) => {
     setSettings(s);
     saveSettings(s);
+  }, []);
+
+  const onContextChange = useCallback((context: Context) => {
+    setSelectedContext(context);
+    setSettings((prev) => {
+      const next = { ...prev, context };
+      saveSettings(next);
+      return next;
+    });
   }, []);
 
   const goPractice = useCallback(() => {
@@ -123,7 +138,12 @@ export default function App() {
 
         {view === "practice" && (
           <>
-            {phase === "idle" && <RecommenderCard onStart={startSession} />}
+            {phase === "idle" && (
+              <>
+                <ContextPicker value={selectedContext} onChange={onContextChange} />
+                <RecommenderCard onStart={startSession} context={selectedContext} />
+              </>
+            )}
             {phase === "loading" && <p className="text-center text-ink-muted">loading prompts…</p>}
             {phase === "typing" && generated && (
               <TypingSurface
@@ -139,6 +159,7 @@ export default function App() {
               <ResultsScreen
                 result={result}
                 mode={mode}
+                context={selectedContext}
                 targetSeconds={settings.sessionSeconds}
                 targetChars={generated.text.length}
                 onAgain={() => setPhase("idle")}

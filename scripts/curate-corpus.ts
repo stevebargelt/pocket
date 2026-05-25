@@ -1,5 +1,5 @@
 // Build-time corpus curation. Reads a LOCAL WildChat-1M dump (gitignored) and
-// emits data/corpus-seed.json filtered to clean, single-turn, English, PII-free
+// emits data/seeds/prompts.json filtered to clean, single-turn, English, PII-free
 // human prompts <=200 chars, capped at MAX_ITEMS. This never runs at runtime and
 // never downloads anything — point it at a dump you already have on disk.
 //
@@ -15,7 +15,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const OUT_PATH = resolve(HERE, "../data/corpus-seed.json");
+const OUT_PATH = resolve(HERE, "../data/seeds/prompts.json");
 const DUMP_PATH = process.env.POCKET_WILDCHAT ?? resolve(HERE, "../data/wildchat-1m.jsonl");
 
 const MAX_ITEMS = 200;
@@ -79,7 +79,7 @@ function main(): void {
     console.error(
       `curate-corpus: no WildChat dump at ${DUMP_PATH}.\n` +
         `Set POCKET_WILDCHAT to a local JSONL dump to regenerate the seed.\n` +
-        `The committed data/corpus-seed.json (honestly-labeled curated seed) is left untouched.`,
+        `The committed data/seeds/prompts.json (honestly-labeled curated seed) is left untouched.`,
     );
     process.exit(1);
   }

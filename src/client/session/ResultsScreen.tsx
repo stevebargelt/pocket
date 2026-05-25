@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PracticeMode, SessionKeyStat, SessionRow } from "../../shared/types";
+import { type Context, CONTEXT_LABELS } from "../../shared/constants";
 import { computeMetrics } from "../../shared/metrics";
 import { api } from "../api";
 import { HeatMap } from "../components/HeatMap";
@@ -34,6 +35,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 export function ResultsScreen({
   result,
   mode,
+  context,
   targetSeconds,
   targetChars,
   onAgain,
@@ -41,6 +43,7 @@ export function ResultsScreen({
 }: {
   result: SessionResult;
   mode: PracticeMode;
+  context: Context;
   targetSeconds: number;
   targetChars: number;
   onAgain: () => void;
@@ -63,19 +66,20 @@ export function ResultsScreen({
         startedAt: result.startedAt,
         endedAt: result.endedAt,
         mode,
+        context,
         targetSeconds,
         targetChars,
         keystrokes: result.keystrokes,
       })
       .then((_row: SessionRow) => setSaveState("saved"))
       .catch(() => setSaveState("error"));
-  }, [result, mode, targetSeconds, targetChars]);
+  }, [result, mode, context, targetSeconds, targetChars]);
 
   return (
     <div className="mx-auto max-w-3xl">
       <h2 className="mb-1 text-lg text-ink-bright">Session complete</h2>
       <p className="mb-6 text-xs text-ink-muted">
-        {mode === "targeted" ? "targeted at your weak spots" : "random prompts"} ·{" "}
+        {mode === "targeted" ? "targeted at your weak spots" : `random ${CONTEXT_LABELS[context]}`} ·{" "}
         {saveState === "saving" && "saving…"}
         {saveState === "saved" && "saved to history"}
         {saveState === "error" && <span className="text-err">save failed — is the server running?</span>}

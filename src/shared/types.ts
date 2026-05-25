@@ -1,5 +1,7 @@
 // Cross-cutting types shared by client and server.
 
+import type { Context } from "./constants";
+
 /** One captured keystroke. `index` is the position in the presented text. */
 export interface KeystrokeRecord {
   index: number;
@@ -17,6 +19,8 @@ export interface SessionPayload {
   startedAt: number;
   endedAt: number;
   mode: PracticeMode;
+  /** Optional so v1 callers (and pre-context tests) stay valid; absent => DEFAULT_CONTEXT. */
+  context?: Context;
   targetSeconds: number;
   /** Length of the presented text the user typed against. */
   targetChars: number;

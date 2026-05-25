@@ -1,0 +1,28 @@
+{
+  "context": "cli",
+  "source": "Pocket (hand-authored)",
+  "license": "MIT",
+  "note": "Hand-authored command-line examples (git, docker, npm, kubectl, etc.) to round out the CLI context with day-to-day developer commands. Original MIT content. Shares the 'cli' context with cli-tldr.json; each row carries its own source.",
+  "items": [
+    "git checkout -b feature/new-login",
+    "git commit -m \"fix: handle null user session\"",
+    "git rebase -i HEAD~3",
+    "git log --oneline --graph --all",
+    "git stash pop",
+    "git diff --staged",
+    "docker build -t myapp:latest .",
+    "docker run -d -p 8080:80 nginx",
+    "docker compose up -d --build",
+    "docker ps -a --format \"{{.Names}}\"",
+    "npm run build && npm start",
+    "npm install --save-dev typescript",
+    "npx tsc --noEmit",
+    "node --version",
+    "jq '.dependencies' package.json",
+    "brew install ripgrep",
+    "systemctl restart nginx",
+    "journalctl -u myapp -f",
+    "kubectl get pods -n default",
+    "make clean && make all"
+  ]
+}

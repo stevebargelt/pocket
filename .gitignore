@@ -8,11 +8,16 @@ pocket.db-wal
 pocket.db-shm
 data/*.db
 
-# Local WildChat-1M dump used only at curate time — never committed
+# Local raw corpora used only at curate time — never committed
 data/wildchat-raw/
 data/wildchat-1m.jsonl
 *.wildchat.jsonl
+data/tldr-raw/
+data/code-raw/
+data/enron-raw/
 
 # Misc
 .DS_Store
 *.log
+
+keymaps/
