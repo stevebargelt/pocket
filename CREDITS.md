@@ -122,11 +122,45 @@ In v1.1 these are **hand-written, not LLM-synthesized.** PRD §5 floats
 LLM-synthesized Teams snippets; that is a separate decision deferred past v1.1.
 See `data/PROVENANCE.md`.
 
-## Context — MoErgo Glove 80
+## Keyboard & keymap — MoErgo Glove 80
 
 Pocket targets the [MoErgo Glove 80](https://www.moergo.com/) (columnar split,
-ZMK firmware). MoErgo is the keyboard vendor and context for this project; no
-MoErgo code or assets are included in v1.
+ZMK firmware). MoErgo is the keyboard vendor and context for this project.
+
+From **v1.2** Pocket reads the user's own `.keymap` file (exported from the
+MoErgo Layout Editor) to drive the live keymap display and the layer /
+thumb-cluster drills. Two points on provenance:
+
+- **The keymap is the user's own file — Pocket reads it, never redistributes
+  it.** The configured keymaps directory (`keymaps/`) is **git-ignored**, so no
+  exported layout is ever committed to this repo. Pocket parses from a local
+  path (`POCKET_KEYMAP_PATH`, else the most-recently-modified `*.keymap` under
+  `keymaps/`); it never downloads, uploads, or bundles a MoErgo layout.
+- **No MoErgo code or assets are included.** The Glove 80 SVG in
+  `src/client/components/` is hand-rolled from the keyboard's documented physical
+  geometry; it is not a MoErgo asset.
+
+## ZMK firmware
+
+The `.keymap` files Pocket reads use the **[ZMK](https://zmk.dev/)** devicetree
+keymap format (behaviors such as `&kp`, `&mo`, `&to`, `&tog`, `&lt`, `&mt`,
+`&trans`). ZMK is open-source, licensed **MIT**. Pocket's parser
+(`src/server/keymap/`) is a focused, independent reimplementation of the small
+devicetree subset it needs — it does **not** fork, vendor, or link ZMK code, nor
+pull in a full devicetree library. Where ZMK's published syntax docs / examples
+informed the parser, they are credited here under ZMK's MIT license.
+
+> ZMK Firmware © The ZMK Contributors, licensed under the MIT License.
+> Source: https://github.com/zmkfirmware/zmk
+
+## Layer & thumb-cluster drills — hand-curated (Pocket)
+
+The v1.2 layer and thumb-cluster drills mix weak-bigram-weighted lines from the
+existing corpora with a small **hand-curated seed of symbol / thumb-key
+sequences authored for Pocket** (`LAYER_SEEDS` / `THUMB_SEEDS` in
+`src/server/drills/`). These seeds are original and **MIT**-licensed
+(Pocket-authored); nothing is sampled from an external dataset. See
+`data/PROVENANCE.md`.
 
 ## Libraries
 

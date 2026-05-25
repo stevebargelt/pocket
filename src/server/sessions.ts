@@ -19,12 +19,20 @@ const SESSION_COLUMNS = `
  * Persist a finished session: the sessions row, the entire keystroke buffer
  * (batched), the per-session heat-map stats, and the EMA cache update — all in
  * ONE transaction so the keystroke log and its aggregates can never diverge.
+ *
+ * `fp` is the layout fingerprint stamped on the session and its aggregates. It
+ * defaults to the v1 sentinel (`LAYOUT_FINGERPRINT`) so pre-keymap callers and
+ * tests stay valid; the route passes the active keymap's content-hash
+ * fingerprint when one is loaded, segregating per-layout data cleanly.
  */
-export function saveSession(db: Db, payload: SessionPayload): SessionRow {
+export function saveSession(
+  db: Db,
+  payload: SessionPayload,
+  fp: string = LAYOUT_FINGERPRINT,
+): SessionRow {
   const elapsedMs = payload.endedAt - payload.startedAt;
   const metrics = computeMetrics(payload.keystrokes, elapsedMs);
   const targetWords = Math.round(payload.targetChars / CHARS_PER_WORD);
-  const fp = LAYOUT_FINGERPRINT;
   const context = payload.context ?? DEFAULT_CONTEXT;
 
   const insertSession = db.prepare(

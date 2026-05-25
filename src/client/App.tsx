@@ -1,17 +1,41 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { PracticeMode } from "../shared/types";
 import type { Context } from "../shared/constants";
-import type { GeneratedText } from "./api";
+import type { GeneratedText, Keymap, DrillText, LayerInfo } from "./api";
 import { api } from "./api";
 import { loadSettings, saveSettings, type Settings, type Theme } from "./settings";
 import { RecommenderCard } from "./recommender/RecommenderCard";
 import { ContextPicker } from "./session/ContextPicker";
+import { LayerPicker, type LayerSelection } from "./session/LayerPicker";
+import { KeymapView } from "./components/KeymapView";
+import { HeatMap } from "./components/HeatMap";
 import { TypingSurface, type SessionResult } from "./session/TypingSurface";
 import { ResultsScreen } from "./session/ResultsScreen";
 import { HistoryView } from "./history/HistoryView";
 
 type View = "practice" | "history" | "settings";
 type Phase = "idle" | "loading" | "typing" | "results";
+
+const KEYMAP_SIG_KEY = "pocket.keymapSig";
+
+/**
+ * Cheap, stable, UI-only content hash of a parsed keymap (layer names + raw
+ * binding tokens). This is NOT the server's SHA-256 fingerprint — it exists only
+ * so the client can tell, across visits, that the user re-exported a *different*
+ * layout and flag it in the live keymap display. Robust to server restarts
+ * (identical content ⇒ identical hash ⇒ no false "changed" banner).
+ */
+function keymapSignature(km: Keymap): string {
+  let h = 5381;
+  const mix = (s: string) => {
+    for (let i = 0; i < s.length; i++) h = (Math.imul(h, 33) ^ s.charCodeAt(i)) | 0;
+  };
+  for (const layer of km.layers) {
+    mix(layer.name);
+    for (const b of layer.bindings) mix(b.raw);
+  }
+  return (h >>> 0).toString(16);
+}
 
 function NavButton({
   active,
@@ -81,6 +105,15 @@ export default function App() {
   const [mode, setMode] = useState<PracticeMode>("random");
   const [result, setResult] = useState<SessionResult | null>(null);
 
+  // v1.2 keymap awareness.
+  const [keymap, setKeymap] = useState<Keymap | null>(null);
+  const [layers, setLayers] = useState<LayerInfo[]>([]);
+  const [keymapLoaded, setKeymapLoaded] = useState(false);
+  const [viewedLayerIndex, setViewedLayerIndex] = useState(0);
+  const [thumbSelected, setThumbSelected] = useState(false);
+  const [fingerprintChanged, setFingerprintChanged] = useState(false);
+  const [drillError, setDrillError] = useState<string | null>(null);
+
   const startSession = useCallback(
     async (m: PracticeMode) => {
       setMode(m);
@@ -91,6 +124,69 @@ export default function App() {
     },
     [selectedContext],
   );
+
+  const refreshKeymap = useCallback(async () => {
+    try {
+      const [km, ls] = await Promise.all([api.keymap(), api.layers()]);
+      setLayers(ls);
+      setKeymap(km);
+      setKeymapLoaded(true);
+      if (km) {
+        const sig = keymapSignature(km);
+        const prev = localStorage.getItem(KEYMAP_SIG_KEY);
+        setFingerprintChanged(prev !== null && prev !== sig);
+        localStorage.setItem(KEYMAP_SIG_KEY, sig);
+        // Keep the viewed layer in range if the layer count shrank on re-export.
+        setViewedLayerIndex((i) => (i < km.layers.length ? i : 0));
+      } else {
+        setFingerprintChanged(false);
+      }
+    } catch {
+      // No server / network error: behave as if no keymap (HeatMap fallback).
+      setKeymap(null);
+      setLayers([]);
+      setKeymapLoaded(true);
+    }
+  }, []);
+
+  // Load (and refresh) the active keymap whenever we land on the idle Practice
+  // view. Refreshing on each return picks up a re-export the watcher reloaded
+  // server-side without polling.
+  useEffect(() => {
+    if (view === "practice" && phase === "idle") void refreshKeymap();
+  }, [view, phase, refreshKeymap]);
+
+  const onLayerSelectionChange = useCallback((selection: LayerSelection) => {
+    setDrillError(null);
+    if (selection.kind === "thumb") {
+      setThumbSelected(true);
+    } else {
+      setThumbSelected(false);
+      setViewedLayerIndex(selection.index);
+    }
+  }, []);
+
+  const startDrill = useCallback(async () => {
+    setDrillError(null);
+    setPhase("loading");
+    try {
+      const layerName = keymap?.layers[viewedLayerIndex]?.name;
+      const drill: DrillText = thumbSelected
+        ? await api.thumbDrill(layerName)
+        : await api.layerDrill(layerName ?? "", selectedContext);
+      if (!drill.drillable || drill.text.length === 0) {
+        setDrillError(drill.reason ?? "this layer has no typeable keys to drill");
+        setPhase("idle");
+        return;
+      }
+      setMode(drill.mode);
+      setGenerated(drill);
+      setPhase("typing");
+    } catch {
+      setDrillError("couldn't load that drill — is the server running?");
+      setPhase("idle");
+    }
+  }, [thumbSelected, keymap, viewedLayerIndex, selectedContext]);
 
   const onSettingsChange = useCallback((s: Settings) => {
     setSettings(s);
@@ -110,6 +206,17 @@ export default function App() {
     setView("practice");
     setPhase("idle");
   }, []);
+
+  const selection: LayerSelection = thumbSelected
+    ? { kind: "thumb" }
+    : { kind: "layer", index: viewedLayerIndex };
+  const viewedLayer = layers.find((l) => l.index === viewedLayerIndex);
+  const canDrill = thumbSelected || (viewedLayer?.drillable ?? false);
+  const drillButtonLabel = thumbSelected
+    ? "start thumb-cluster drill"
+    : viewedLayer
+      ? `start ${viewedLayer.name} drill`
+      : "start layer drill";
 
   return (
     <div className="min-h-full">
@@ -139,10 +246,58 @@ export default function App() {
         {view === "practice" && (
           <>
             {phase === "idle" && (
-              <>
-                <ContextPicker value={selectedContext} onChange={onContextChange} />
-                <RecommenderCard onStart={startSession} context={selectedContext} />
-              </>
+              <div className="space-y-8">
+                {keymap ? (
+                  <section className="flex flex-col items-center gap-4">
+                    <KeymapView
+                      keymap={keymap}
+                      activeLayerIndex={viewedLayerIndex}
+                      fingerprintChanged={fingerprintChanged}
+                      updatedAt={keymap.parsedAt}
+                    />
+                    <LayerPicker
+                      layers={layers}
+                      value={selection}
+                      onChange={onLayerSelectionChange}
+                    />
+                    <div className="flex flex-col items-center gap-1">
+                      <button
+                        onClick={startDrill}
+                        disabled={!canDrill}
+                        title={
+                          canDrill ? undefined : "this layer binds no typeable keys to drill"
+                        }
+                        className="rounded bg-accent px-4 py-2 font-semibold text-ink-bg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {drillButtonLabel}
+                      </button>
+                      {drillError && (
+                        <p role="alert" className="text-sm text-err">
+                          {drillError}
+                        </p>
+                      )}
+                    </div>
+                  </section>
+                ) : (
+                  keymapLoaded && (
+                    <section className="flex flex-col items-center gap-2">
+                      <HeatMap keyStats={[]} showToggle={false} />
+                      <p className="max-w-md text-center text-xs text-ink-muted">
+                        No ZMK keymap loaded — showing a generic layout. Drop a{" "}
+                        <span className="font-mono">.keymap</span> file in{" "}
+                        <span className="font-mono">keymaps/</span> (or set{" "}
+                        <span className="font-mono">POCKET_KEYMAP_PATH</span>) to see your real
+                        Glove 80 layout and unlock layer &amp; thumb-cluster drills.
+                      </p>
+                    </section>
+                  )
+                )}
+
+                <div className="border-t border-ink-border pt-8">
+                  <ContextPicker value={selectedContext} onChange={onContextChange} />
+                  <RecommenderCard onStart={startSession} context={selectedContext} />
+                </div>
+              </div>
             )}
             {phase === "loading" && <p className="text-center text-ink-muted">loading prompts…</p>}
             {phase === "typing" && generated && (
