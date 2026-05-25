@@ -20,14 +20,14 @@ export function rankWeakest(
   const eligible = stats.filter((s) => s.samples >= minSamples);
   if (eligible.length === 0) return [];
 
-  const meanSpeed = eligible.reduce((sum, s) => sum + s.speedEma, 0) / eligible.length;
+  const meanLatency = eligible.reduce((sum, s) => sum + s.latencyMsEma, 0) / eligible.length;
 
   const ranked: WeakUnit[] = eligible.map((s) => {
-    const relativeSlowness = meanSpeed > 0 ? (s.speedEma - meanSpeed) / meanSpeed : 0;
+    const relativeSlowness = meanLatency > 0 ? (s.latencyMsEma - meanLatency) / meanLatency : 0;
     const score = relativeSlowness + errorWeight * s.errorRateEma;
     return {
       unit: s.unit,
-      speedEma: s.speedEma,
+      latencyMsEma: s.latencyMsEma,
       errorRateEma: s.errorRateEma,
       samples: s.samples,
       relativeSlowness,
@@ -42,7 +42,7 @@ export function rankWeakest(
 function loadStats(db: Db, table: "key_stats" | "bigram_stats", unitCol: "key" | "bigram", fp: string): StatRow[] {
   return db
     .prepare(
-      `SELECT ${unitCol} AS unit, speed_ema AS speedEma, error_rate_ema AS errorRateEma, samples
+      `SELECT ${unitCol} AS unit, latency_ms_ema AS latencyMsEma, error_rate_ema AS errorRateEma, samples
        FROM ${table} WHERE layout_fingerprint = ?`,
     )
     .all(fp) as StatRow[];

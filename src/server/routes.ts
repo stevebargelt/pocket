@@ -13,6 +13,8 @@ import {
   CONTEXTS,
   DEFAULT_CONTEXT,
   LAYOUT_FINGERPRINT,
+  MAX_KEYSTROKE_LATENCY_MS,
+  SESSION_MAX_DURATION_MS,
   TOP_N_WEAK,
   type Context,
 } from "../shared/constants";
@@ -41,6 +43,77 @@ function coerceContext(raw: unknown): Context {
   return CONTEXTS.includes(raw as Context) ? (raw as Context) : DEFAULT_CONTEXT;
 }
 
+const isNonNegativeInt = (n: unknown): n is number =>
+  typeof n === "number" && Number.isInteger(n) && n >= 0;
+const isPositiveInt = (n: unknown): n is number =>
+  typeof n === "number" && Number.isInteger(n) && n > 0;
+
+/**
+ * Hand-rolled guard for the POST /session payload (house style — no zod for a
+ * single route). Returns a human-readable error naming the FIRST offending
+ * field, or null when the payload is acceptable. Rejects, never coerces.
+ *
+ * Threat model: the client is the only writer today, but a forged or buggy POST
+ * is the realistic adversary — the keystrokes table is the source-of-truth for
+ * every derived metric, so bad time fields skew WPM/longitudinal trends,
+ * out-of-range latencies poison the per-key EMA, and unbounded char fields bloat
+ * storage. Validate at the boundary (here), NOT in saveSession, which trusted
+ * internal callers and the rebuild path reuse. Default-deny on the write path:
+ * an unknown context is rejected (not coerced like the read path) so it can
+ * never pollute history or the cross-context summary's GROUP BY.
+ */
+function validateSessionPayload(payload: SessionPayload): string | null {
+  if (!payload || typeof payload !== "object") return "invalid session payload";
+
+  // Session time fields (epoch ms). started_at:0 is a valid fixture, so the
+  // floor is non-negative, not strictly positive.
+  if (!isNonNegativeInt(payload.startedAt)) return "startedAt must be a non-negative integer";
+  if (!isNonNegativeInt(payload.endedAt)) return "endedAt must be a non-negative integer";
+  if (payload.endedAt < payload.startedAt) return "endedAt must be >= startedAt";
+  if (payload.endedAt - payload.startedAt > SESSION_MAX_DURATION_MS) {
+    return `session duration must be <= ${SESSION_MAX_DURATION_MS}ms (startedAt..endedAt)`;
+  }
+
+  // Target fields are optional on the wire (saveSession tolerates absence); when
+  // present they must be sane positive integers.
+  if (payload.targetSeconds !== undefined && !isPositiveInt(payload.targetSeconds)) {
+    return "targetSeconds must be a positive integer";
+  }
+  if (payload.targetChars !== undefined && !isPositiveInt(payload.targetChars)) {
+    return "targetChars must be a positive integer";
+  }
+
+  // Unknown context is rejected on the write path (CONTEXTS membership gate).
+  if (payload.context !== undefined && !CONTEXTS.includes(payload.context)) {
+    return "unknown context";
+  }
+
+  if (!Array.isArray(payload.keystrokes)) return "keystrokes must be an array";
+  for (let i = 0; i < payload.keystrokes.length; i++) {
+    const k = payload.keystrokes[i];
+    if (!k || typeof k !== "object") return `keystrokes[${i}] must be an object`;
+    if (
+      typeof k.latencyMs !== "number" ||
+      !Number.isFinite(k.latencyMs) ||
+      k.latencyMs < 0 ||
+      k.latencyMs > MAX_KEYSTROKE_LATENCY_MS
+    ) {
+      return `keystrokes[${i}].latencyMs must be a number in [0, ${MAX_KEYSTROKE_LATENCY_MS}]`;
+    }
+    if (typeof k.expectedChar !== "string" || k.expectedChar.length > 4) {
+      return `keystrokes[${i}].expectedChar must be a string of length <= 4`;
+    }
+    if (typeof k.actualChar !== "string" || k.actualChar.length > 4) {
+      return `keystrokes[${i}].actualChar must be a string of length <= 4`;
+    }
+    if (typeof k.correct !== "boolean") {
+      return `keystrokes[${i}].correct must be a boolean`;
+    }
+  }
+
+  return null;
+}
+
 export function createApiRouter(db: Db, keymap: KeymapPort = SENTINEL_PORT): Router {
   const router = Router();
 
@@ -58,15 +131,9 @@ export function createApiRouter(db: Db, keymap: KeymapPort = SENTINEL_PORT): Rou
 
   router.post("/session", (req, res) => {
     const payload = req.body as SessionPayload;
-    if (!payload || !Array.isArray(payload.keystrokes) || typeof payload.startedAt !== "number") {
-      res.status(400).json({ error: "invalid session payload" });
-      return;
-    }
-    // Write path is strict: an unknown context would pollute history and the
-    // cross-context summary's GROUP BY, so reject it rather than coerce. Drill
-    // sessions reuse an existing CONTEXTS value, so this gate is unchanged.
-    if (payload.context !== undefined && !CONTEXTS.includes(payload.context)) {
-      res.status(400).json({ error: "unknown context" });
+    const error = validateSessionPayload(payload);
+    if (error) {
+      res.status(400).json({ error });
       return;
     }
     // Stamp the session with the active layout fingerprint (sentinel when no

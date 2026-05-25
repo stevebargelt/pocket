@@ -67,7 +67,8 @@ export interface HistoryEntry extends SessionRow {
 /** A row in key_stats / bigram_stats (the EMA cache). */
 export interface StatRow {
   unit: string;
-  speedEma: number;
+  /** EMA of mean inter-keystroke latency in ms (lower = faster). */
+  latencyMsEma: number;
   errorRateEma: number;
   samples: number;
 }
@@ -75,7 +76,8 @@ export interface StatRow {
 /** A single ranked weak unit (key or bigram). */
 export interface WeakUnit {
   unit: string;
-  speedEma: number;
+  /** EMA of mean inter-keystroke latency in ms (lower = faster). */
+  latencyMsEma: number;
   errorRateEma: number;
   samples: number;
   /** Relative slowness vs the user's own per-unit mean, e.g. 0.18 = 18% slower. */

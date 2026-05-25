@@ -4,6 +4,16 @@
 /** Fixed-alpha EMA weight. ema' = alpha*sample + (1-alpha)*ema. */
 export const EMA_ALPHA = 0.2;
 
+/**
+ * Samples a unit must accumulate before its EMA is treated as "live". Below this
+ * threshold the stored stat carries the simple running mean instead — seeding the
+ * EMA at the very first sample over-weights early data, so we average until the
+ * window fills, then let the warmup mean seed the live EMA. Purely a function of
+ * the running sample count, so the incremental write path and a from-scratch
+ * rebuild stay bit-for-bit identical (the no-drift invariant in ema.ts).
+ */
+export const WARMUP_SAMPLES = 3;
+
 /** A key needs this many samples before it can be ranked "weakest". */
 export const MIN_KEY_SAMPLES = 30;
 
@@ -74,3 +84,11 @@ export const SUMMARY_WINDOW_DAYS = 30;
 
 /** Minimum sessions required in BOTH windows before the summary emits a percentage delta. */
 export const SUMMARY_MIN_SESSIONS = 3;
+
+// --- v1.2.1: POST /api/session payload validation caps (consumed by routes.ts) ---
+
+/** Hard ceiling on a single session's wall-clock span (endedAt - startedAt). 2 hours. */
+export const SESSION_MAX_DURATION_MS = 2 * 60 * 60 * 1000;
+
+/** Hard ceiling on any one keystroke's inter-key latency. Anything larger is corrupt input. */
+export const MAX_KEYSTROKE_LATENCY_MS = 10000;

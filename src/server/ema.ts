@@ -1,5 +1,5 @@
 import type { KeystrokeRecord } from "../shared/types";
-import { EMA_ALPHA } from "../shared/constants";
+import { EMA_ALPHA, WARMUP_SAMPLES } from "../shared/constants";
 import { bigramOf } from "../shared/bigrams";
 
 // The one pure, deterministic fold used by BOTH the incremental write path and
@@ -8,9 +8,16 @@ import { bigramOf } from "../shared/bigrams";
 // existing EMA in timestamp order yields exactly the same result as folding the
 // whole ordered sequence from scratch — that is the no-drift invariant the
 // rebuild relies on.
+//
+// Warmup: seeding the EMA at the very first sample over-weights early data, so
+// for the first WARMUP_SAMPLES samples the stored value is the simple running
+// mean; once the window fills, that warmup mean becomes the EMA seed and every
+// later sample folds in as a live EMA. The branch is chosen purely by the
+// running sample count (identical between the incremental and rebuild paths), so
+// the no-drift invariant survives the warmup→live transition unchanged.
 
 export interface FoldStat {
-  speedEma: number;
+  latencyMsEma: number;
   errorRateEma: number;
   samples: number;
 }
@@ -26,31 +33,41 @@ export function applyEma(prev: number | null, sample: number, alpha = EMA_ALPHA)
   return alpha * sample + (1 - alpha) * prev;
 }
 
-/** Fold one (speed, error) sample into a stat, creating it on first sight. */
+/** Running arithmetic mean: mean_n = mean_{n-1} + (sample - mean_{n-1}) / n. */
+export function applyMean(prev: number | null, sample: number, n: number): number {
+  if (prev === null) return sample;
+  return prev + (sample - prev) / n;
+}
+
+/** Fold one (latency, error) sample into a stat, creating it on first sight. */
 export function foldSample(
   prev: FoldStat | undefined,
-  speedSample: number,
+  latencySample: number,
   errorSample: number,
   alpha = EMA_ALPHA,
 ): FoldStat {
-  if (!prev) {
-    return { speedEma: speedSample, errorRateEma: errorSample, samples: 1 };
-  }
+  const samples = (prev?.samples ?? 0) + 1;
+  // Warmup window → running mean; past it → live EMA. Both fields share the same
+  // sample count, so they cross the warmup boundary together. The choice is a
+  // pure function of `samples`, keeping the incremental and rebuild paths in
+  // lockstep across the transition.
+  const fold = (p: number | null, sample: number): number =>
+    samples <= WARMUP_SAMPLES ? applyMean(p, sample, samples) : applyEma(p, sample, alpha);
   return {
-    speedEma: applyEma(prev.speedEma, speedSample, alpha),
-    errorRateEma: applyEma(prev.errorRateEma, errorSample, alpha),
-    samples: prev.samples + 1,
+    latencyMsEma: fold(prev?.latencyMsEma ?? null, latencySample),
+    errorRateEma: fold(prev?.errorRateEma ?? null, errorSample),
+    samples,
   };
 }
 
 function accumulate(
   map: Map<string, FoldStat>,
   unit: string,
-  speedSample: number,
+  latencySample: number,
   errorSample: number,
   alpha: number,
 ): void {
-  map.set(unit, foldSample(map.get(unit), speedSample, errorSample, alpha));
+  map.set(unit, foldSample(map.get(unit), latencySample, errorSample, alpha));
 }
 
 /**

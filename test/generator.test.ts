@@ -6,10 +6,10 @@ import { generateText } from "../src/server/generator";
 import { containsBigram } from "../src/shared/bigrams";
 import { LAYOUT_FINGERPRINT } from "../src/shared/constants";
 
-function insertBigram(db: ReturnType<typeof openDb>, bigram: string, speed: number, samples: number) {
+function insertBigram(db: ReturnType<typeof openDb>, bigram: string, latency: number, samples: number) {
   db.prepare(
-    "INSERT INTO bigram_stats (bigram, layout_fingerprint, speed_ema, error_rate_ema, samples, last_updated) VALUES (?,?,?,0,?,0)",
-  ).run(bigram, LAYOUT_FINGERPRINT, speed, samples);
+    "INSERT INTO bigram_stats (bigram, layout_fingerprint, latency_ms_ema, error_rate_ema, samples, last_updated) VALUES (?,?,?,0,?,0)",
+  ).run(bigram, LAYOUT_FINGERPRINT, latency, samples);
 }
 
 test("targeted mode prefers corpus lines containing the worst bigrams", () => {

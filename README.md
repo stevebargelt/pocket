@@ -3,13 +3,15 @@
 *Break in your Glove 80.*
 
 A single-user, local-first typing tutor for the [MoErgo Glove 80](https://www.moergo.com/).
-This is **v1.1 (five-context corpus router)**: practice across prompts, CLI, code,
-email, and Teams chat, with per-context history and a cross-context summary — on
-top of the v1 weakness engine and longitudinal history.
+This is **v1.2 (ZMK keymap awareness)**: practice across prompts, CLI, code,
+email, and Teams chat, with per-context history and a cross-context summary, plus
+a live Glove 80 keymap display and layer/thumb-cluster drills read from your
+actual ZMK keymap — on top of the v1 weakness engine and longitudinal history.
 Everything runs locally; no accounts, no cloud, no telemetry.
 
-> Scope is PRD §5 "v1 — MVP" plus "v1.1 — Five-context corpus router". The ZMK
-> keymap reader (v1.2) and longitudinal layout A/B (v2) are out of scope here.
+> Scope is PRD §5 through "v1.2 — ZMK keymap awareness" (the keymap reader,
+> layer/thumb drills, and per-layout fingerprint all ship here). The longitudinal
+> layout A/B view (v2) is still out of scope.
 
 ## Quick start
 
@@ -29,10 +31,11 @@ npm run dev      # Vite dev server (5173) + Express API (3000) with hot reload
 
 In dev, the Vite server proxies `/api/*` to the Express server.
 
-### Other scripts
+### Scripts
 
 | Script | What it does |
 |--------|--------------|
+| `npm run dev` | Vite dev server (5173) + Express API (3000) with hot reload |
 | `npm start` | `vite build` then start Express serving `dist/` + the JSON API |
 | `npm run build` | Build the client bundle into `dist/` |
 | `npm run serve` | Start Express only (expects `dist/` already built) |
@@ -87,6 +90,23 @@ stats stay **global** across contexts (the cross-context summary is built from
 session-level aggregates only), so targeted mode can degrade to random sampling
 in symbol-heavy contexts (CLI/code) where your global weak bigrams aren't present.
 
+## What v1.2 adds — ZMK keymap awareness
+
+- **Keymap reader** — Pocket parses a ZMK `.keymap` from a local path
+  (`POCKET_KEYMAP_PATH`, or the newest `*.keymap` in `keymaps/`) and watches the
+  directory, reloading on re-export. With no keymap present it still runs and
+  falls back to the per-key heat map.
+- **Live keymap display** — a Glove 80 SVG (`src/client/components/KeymapView.tsx`)
+  rendered from the parsed ZMK source, showing the selected layer with Mac mod
+  glyphs (⌘ ⌥ ⌃ ⇧).
+- **Layer & thumb-cluster drills** — a layer picker on the Practice landing
+  generates scored practice for each drillable non-base layer and for the thumb
+  cluster (the documented #1 Glove 80 pain point). Non-drillable layers stay
+  viewable but aren't turned into drills.
+- **Layout fingerprint** — every session and stat is stamped with a SHA-256 of
+  the parsed keymap (bindings + layer names), so results are attributable to the
+  exact layout and a mid-stream layout change never silently pollutes a comparison.
+
 ## How the numbers work (the metric contract)
 
 Defined once in `src/shared/metrics.ts` and shared by the live UI, the save path,
@@ -104,6 +124,15 @@ and history — so every trend is commensurable.
   sample in keystroke timestamp order. `EMA_ALPHA = 0.2`. Recency-weighted by
   construction; the same pure fold powers both the incremental write path and a
   full rebuild from the keystroke log — so the derived stats never drift.
+- **EMA warmup** (`WARMUP_SAMPLES = 3` in `src/shared/constants.ts`): a single
+  early sample shouldn't masquerade as a stable EMA, so until a unit has
+  accumulated `WARMUP_SAMPLES` samples its stat reports a simple running mean; at
+  and beyond the threshold it reads as the live recency-weighted EMA. The
+  warmup→live transition is a pure function of the stored sample count, so the
+  incremental write path and a from-scratch rebuild still agree across the
+  boundary (the no-drift invariant holds). This is a tunable correctness fix;
+  because the eligibility gates below already keep sub-threshold units out of
+  recommender output, the user-visible impact is minimal.
 - **Key / bigram unit** (`src/shared/bigrams.ts`): stats are keyed on the
   **expected** character (case-sensitive; space is a literal key). A bigram is
   two consecutive expected characters. The generator's substring match uses the
@@ -132,11 +161,17 @@ applied forward-only via `PRAGMA user_version`.
 - `corpus_items` — practice text with `context`, `source`, and `license`. Seeded
   from `data/seeds/*.json` (one or more files per context); re-seeding is
   idempotent per context. No schema change was needed for v1.1.
+- `layouts` — one row per parsed keymap (v1.2), keyed on its content fingerprint.
+  Stores the canonical layer/binding JSON used to render the live keymap display;
+  re-exporting an identical layout upserts the same row rather than minting a new
+  one.
 
-Every row is stamped with a `layout_fingerprint`. In v1 there is no keymap
-reader yet, so this is the sentinel `LAYOUT_FINGERPRINT = "v1-unknown-layout"`;
-v1.2 will replace it with a hash of the parsed ZMK keymap and can cleanly
-segregate this pre-keymap data.
+Every row is stamped with a `layout_fingerprint`. With no keymap loaded this is
+the sentinel `LAYOUT_FINGERPRINT = "v1-unknown-layout"`; once v1.2's keymap
+reader has parsed a `.keymap`, the fingerprint is a SHA-256 over the canonical
+parsed bindings + layer names (`src/server/keymap/fingerprint.ts`), so every
+result is attributable to the exact layout that produced it and pre-keymap data
+stays cleanly segregated.
 
 ## Performance targets
 

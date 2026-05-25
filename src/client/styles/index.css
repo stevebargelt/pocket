@@ -20,15 +20,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Light theme override (optional, dark is the default). */
-html[data-theme="light"] {
-  color-scheme: light;
-}
-html[data-theme="light"] body {
-  background: #f6f7f9;
-  color: #1c2230;
-}
-
 /* No caret animation — flow UX, no motion noise. */
 .caret {
   border-left: 2px solid theme("colors.accent.DEFAULT");

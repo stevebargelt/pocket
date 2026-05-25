@@ -32,12 +32,12 @@ export function computeSessionKeyStats(keystrokes: KeystrokeRecord[]): SessionKe
 function loadFoldMap(db: Db, table: StatTable, unitCol: UnitCol, fp: string): Map<string, FoldStat> {
   const rows = db
     .prepare(
-      `SELECT ${unitCol} AS unit, speed_ema, error_rate_ema, samples FROM ${table} WHERE layout_fingerprint = ?`,
+      `SELECT ${unitCol} AS unit, latency_ms_ema, error_rate_ema, samples FROM ${table} WHERE layout_fingerprint = ?`,
     )
-    .all(fp) as Array<{ unit: string; speed_ema: number; error_rate_ema: number; samples: number }>;
+    .all(fp) as Array<{ unit: string; latency_ms_ema: number; error_rate_ema: number; samples: number }>;
   const map = new Map<string, FoldStat>();
   for (const r of rows) {
-    map.set(r.unit, { speedEma: r.speed_ema, errorRateEma: r.error_rate_ema, samples: r.samples });
+    map.set(r.unit, { latencyMsEma: r.latency_ms_ema, errorRateEma: r.error_rate_ema, samples: r.samples });
   }
   return map;
 }
@@ -51,16 +51,16 @@ function writeFoldMap(
   now: number,
 ): void {
   const upsert = db.prepare(
-    `INSERT INTO ${table} (${unitCol}, layout_fingerprint, speed_ema, error_rate_ema, samples, last_updated)
+    `INSERT INTO ${table} (${unitCol}, layout_fingerprint, latency_ms_ema, error_rate_ema, samples, last_updated)
      VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(${unitCol}, layout_fingerprint) DO UPDATE SET
-       speed_ema = excluded.speed_ema,
+       latency_ms_ema = excluded.latency_ms_ema,
        error_rate_ema = excluded.error_rate_ema,
        samples = excluded.samples,
        last_updated = excluded.last_updated`,
   );
   for (const [unit, s] of map) {
-    upsert.run(unit, fp, s.speedEma, s.errorRateEma, s.samples, now);
+    upsert.run(unit, fp, s.latencyMsEma, s.errorRateEma, s.samples, now);
   }
 }
 

@@ -6,23 +6,23 @@ import { buildRecommendation } from "../src/server/recommender";
 import { LAYOUT_FINGERPRINT } from "../src/shared/constants";
 import type { StatRow } from "../src/shared/types";
 
-function insertKey(db: ReturnType<typeof openDb>, key: string, speed: number, err: number, samples: number) {
+function insertKey(db: ReturnType<typeof openDb>, key: string, latency: number, err: number, samples: number) {
   db.prepare(
-    "INSERT INTO key_stats (key, layout_fingerprint, speed_ema, error_rate_ema, samples, last_updated) VALUES (?,?,?,?,?,0)",
-  ).run(key, LAYOUT_FINGERPRINT, speed, err, samples);
+    "INSERT INTO key_stats (key, layout_fingerprint, latency_ms_ema, error_rate_ema, samples, last_updated) VALUES (?,?,?,?,?,0)",
+  ).run(key, LAYOUT_FINGERPRINT, latency, err, samples);
 }
-function insertBigram(db: ReturnType<typeof openDb>, bigram: string, speed: number, err: number, samples: number) {
+function insertBigram(db: ReturnType<typeof openDb>, bigram: string, latency: number, err: number, samples: number) {
   db.prepare(
-    "INSERT INTO bigram_stats (bigram, layout_fingerprint, speed_ema, error_rate_ema, samples, last_updated) VALUES (?,?,?,?,?,0)",
-  ).run(bigram, LAYOUT_FINGERPRINT, speed, err, samples);
+    "INSERT INTO bigram_stats (bigram, layout_fingerprint, latency_ms_ema, error_rate_ema, samples, last_updated) VALUES (?,?,?,?,?,0)",
+  ).run(bigram, LAYOUT_FINGERPRINT, latency, err, samples);
 }
 
 test("rankWeakest: gates by samples and ranks slowest+most-error first", () => {
   const stats: StatRow[] = [
-    { unit: "a", speedEma: 100, errorRateEma: 0, samples: 50 },
-    { unit: "b", speedEma: 200, errorRateEma: 0.1, samples: 50 }, // slow + errors -> weakest
-    { unit: "c", speedEma: 120, errorRateEma: 0, samples: 50 },
-    { unit: "d", speedEma: 999, errorRateEma: 0.9, samples: 5 }, // ineligible: too few samples
+    { unit: "a", latencyMsEma: 100, errorRateEma: 0, samples: 50 },
+    { unit: "b", latencyMsEma: 200, errorRateEma: 0.1, samples: 50 }, // slow + errors -> weakest
+    { unit: "c", latencyMsEma: 120, errorRateEma: 0, samples: 50 },
+    { unit: "d", latencyMsEma: 999, errorRateEma: 0.9, samples: 5 }, // ineligible: too few samples
   ];
   const ranked = rankWeakest(stats, 30);
   assert.equal(ranked.length, 3, "the sub-threshold unit is excluded");
@@ -34,7 +34,7 @@ test("rankWeakest: gates by samples and ranks slowest+most-error first", () => {
 });
 
 test("rankWeakest: empty when nothing crosses the gate", () => {
-  const stats: StatRow[] = [{ unit: "a", speedEma: 100, errorRateEma: 0, samples: 1 }];
+  const stats: StatRow[] = [{ unit: "a", latencyMsEma: 100, errorRateEma: 0, samples: 1 }];
   assert.deepEqual(rankWeakest(stats, 30), []);
 });
 

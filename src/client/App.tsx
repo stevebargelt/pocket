@@ -3,7 +3,7 @@ import type { PracticeMode } from "../shared/types";
 import type { Context } from "../shared/constants";
 import type { GeneratedText, Keymap, DrillText, LayerInfo } from "./api";
 import { api } from "./api";
-import { loadSettings, saveSettings, type Settings, type Theme } from "./settings";
+import { loadSettings, saveSettings, type Settings } from "./settings";
 import { RecommenderCard } from "./recommender/RecommenderCard";
 import { ContextPicker } from "./session/ContextPicker";
 import { LayerPicker, type LayerSelection } from "./session/LayerPicker";
@@ -79,17 +79,6 @@ function SettingsView({
           <option value={60}>60 seconds</option>
           <option value={120}>2 minutes</option>
           <option value={300}>5 minutes</option>
-        </select>
-      </label>
-      <label className="flex items-center justify-between">
-        <span className="text-sm text-ink-text">Theme</span>
-        <select
-          value={settings.theme}
-          onChange={(e) => onChange({ ...settings, theme: e.target.value as Theme })}
-          className="rounded border border-ink-border bg-ink-surface px-2 py-1 text-sm"
-        >
-          <option value="dark">dark</option>
-          <option value="light">light</option>
         </select>
       </label>
     </div>

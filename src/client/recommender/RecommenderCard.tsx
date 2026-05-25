@@ -14,7 +14,7 @@ function Chips({ units }: { units: WeakUnit[] }) {
         <span
           key={u.unit}
           className="rounded bg-ink-bg px-2 py-0.5 font-mono text-sm text-accent"
-          title={`${Math.round(u.speedEma)}ms · ${(u.errorRateEma * 100).toFixed(0)}% err · ${u.samples} samples`}
+          title={`${Math.round(u.latencyMsEma)}ms · ${(u.errorRateEma * 100).toFixed(0)}% err · ${u.samples} samples`}
         >
           {unitLabel(u.unit)}
         </span>

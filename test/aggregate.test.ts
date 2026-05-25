@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { openDb } from "../src/server/db";
 import { saveSession } from "../src/server/sessions";
 import { rebuildAggregatesFromKeystrokes, computeSessionKeyStats } from "../src/server/aggregate";
-import { LAYOUT_FINGERPRINT } from "../src/shared/constants";
+import { LAYOUT_FINGERPRINT, WARMUP_SAMPLES } from "../src/shared/constants";
 import type { KeystrokeRecord, SessionPayload } from "../src/shared/types";
 
 function payloadFromText(text: string, startedAt: number): SessionPayload {
@@ -29,17 +29,17 @@ function snapshot(db: ReturnType<typeof openDb>) {
   const keys = (
     db
       .prepare(
-        "SELECT key, speed_ema, error_rate_ema, samples FROM key_stats ORDER BY key",
+        "SELECT key, latency_ms_ema, error_rate_ema, samples FROM key_stats ORDER BY key",
       )
-      .all() as Array<{ key: string; speed_ema: number; error_rate_ema: number; samples: number }>
-  ).map((r) => ({ ...r, speed_ema: round(r.speed_ema), error_rate_ema: round(r.error_rate_ema) }));
+      .all() as Array<{ key: string; latency_ms_ema: number; error_rate_ema: number; samples: number }>
+  ).map((r) => ({ ...r, latency_ms_ema: round(r.latency_ms_ema), error_rate_ema: round(r.error_rate_ema) }));
   const bigrams = (
     db
       .prepare(
-        "SELECT bigram, speed_ema, error_rate_ema, samples FROM bigram_stats ORDER BY bigram",
+        "SELECT bigram, latency_ms_ema, error_rate_ema, samples FROM bigram_stats ORDER BY bigram",
       )
-      .all() as Array<{ bigram: string; speed_ema: number; error_rate_ema: number; samples: number }>
-  ).map((r) => ({ ...r, speed_ema: round(r.speed_ema), error_rate_ema: round(r.error_rate_ema) }));
+      .all() as Array<{ bigram: string; latency_ms_ema: number; error_rate_ema: number; samples: number }>
+  ).map((r) => ({ ...r, latency_ms_ema: round(r.latency_ms_ema), error_rate_ema: round(r.error_rate_ema) }));
   return { keys, bigrams };
 }
 
@@ -57,6 +57,13 @@ test("rebuild == incrementally-maintained aggregates (no-drift invariant)", () =
   rebuildAggregatesFromKeystrokes(db, LAYOUT_FINGERPRINT, Date.now());
   const rebuilt = snapshot(db);
 
+  // The corpus above drives several keys (e.g. high-frequency letters) well past
+  // the warmup window, so deepEqual confirms no-drift holds ACROSS the
+  // warmup→live transition, not just within the all-mean cold-start phase.
+  assert.ok(
+    incremental.keys.some((k) => k.samples > WARMUP_SAMPLES),
+    "fixture must push at least one key past the warmup boundary",
+  );
   assert.deepEqual(rebuilt, incremental);
   db.close();
 });
