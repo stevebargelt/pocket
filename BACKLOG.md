@@ -1,8 +1,20 @@
 # Pocket — Backlog
 
 ## Notes for next session
+**Last session ended 2026-05-25.** Pocket v1.2.1 + logo committed and pushed to https://github.com/stevebargelt/pocket. 106/106 tests passing. Active server is local-only at http://localhost:3000.
 
-(empty)
+**Where to pick up:**
+- **v1.3 — shortcut drill mode** is the user's stated next interest. CMD-C/V/A/X/Z/S, CTRL-C/B, Backspace, Delete. Must be its own context value (extend CONTEXTS enum with 'shortcuts'). Browser-observable via keydown+modifier state, NOT browser-eaten ones (CMD-W/T/Q/R/N skip). House style is hand-rolled validation; same for the new shortcut-capture mode.
+- **v2 — longitudinal layout A/B** is the other roadmap item. Needs accumulated multi-layout data, so most useful after the user has used a non-factory keymap for a while.
+
+**Backlog status (run `forge backlog list --status Active`):**
+- #1 backend hardening, #3 security headers, #9 a11y deepening, #10 per-language code splits.
+- All are deliberately deferred — user's stance is solo-user-on-localhost doesn't pay for production hygiene yet.
+- Closed by recent commits: #4 #5 #6 #7 #8 (in v1.2.1 + v1.2 commits). #2 just closed (subsumed by #9).
+
+**Known forge quirk:** gate-rationale propagation is unreliable. Use `forge invoke engineer` for scope-critical follow-ups instead of relying on advance/request-changes rationale reaching the next phase. See memory `reference_forge_propagation_quirk.md`.
+
+**No in-flight forge runs.** `forge status --json` should show no active runs for this workspace.
 
 ## Active
 
@@ -14,17 +26,6 @@ Surfaced by red-backend on Pocket v1 build (task-build-4c7211). Single-user loca
 3. readOrderedKeystrokes() loads the whole keystroke table into memory via .all(). Fine for v1 (zero data) but switch to .iterate() or paginated reads once data accumulates.
 
 Source: red-backend verdict on Pocket v1 build.
-
-
-### #2 — Accessibility pass: heatmap patterns, focus indicators, chart aria, form semantics
-Surfaced by red-frontend on Pocket v1 build. Out of scope for single-user v1 MVP but worth a coordinated a11y pass before any public-facing version:
-
-1. HeatMap uses color-only signaling. Add patterns/text overlay for color-blind users.
-2. No visible custom focus indicators on interactive elements. Add focus-visible styles.
-3. TrendChart (Recharts) has no accessible name/description. Add aria-label + sr-only summary.
-4. Settings form controls not wrapped in semantic <form>. Wrap and add labels.
-
-Source: red-frontend verdict on Pocket v1 build (task-build-4c7211).
 
 
 ### #3 — Security hardening: Express headers + SQL interpolation review
@@ -69,6 +70,19 @@ This is NOT a v1.x hardening item — it's a real feature, just deferred.
 
 
 ## Done (recent)
+
+### #2 — Accessibility pass: heatmap patterns, focus indicators, chart aria, form semantics
+**Closed:** 2026-05-25.
+
+Surfaced by red-frontend on Pocket v1 build. Out of scope for single-user v1 MVP but worth a coordinated a11y pass before any public-facing version:
+
+1. HeatMap uses color-only signaling. Add patterns/text overlay for color-blind users.
+2. No visible custom focus indicators on interactive elements. Add focus-visible styles.
+3. TrendChart (Recharts) has no accessible name/description. Add aria-label + sr-only summary.
+4. Settings form controls not wrapped in semantic <form>. Wrap and add labels.
+
+Source: red-frontend verdict on Pocket v1 build (task-build-4c7211).
+
 
 ### #5 — v1.2 dependency: HeatMap currently hardcodes QWERTY layout
 **Closed:** 2026-05-25.

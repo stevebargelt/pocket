@@ -220,9 +220,15 @@ Check via `forge status --json` early. **Important: `forge status` is workspace-
 
 This block is for you to fill in (or for `forge init` to populate from project metadata when that lands). Keep it short — the more it bloats, the more context-tokens you eat on every session start.
 
-- **Project**: <!-- name + 1-line description -->
-- **Stack**: <!-- key tech (React, Node, Python, etc.) -->
-- **Where work tracking lives**: <!-- BACKLOG.md, Linear, etc. -->
-- **Any project-specific gates or conventions**: <!-- e.g. "always pause for human review on schema migrations" -->
+- **Project**: Pocket — a local-first typing tutor for the MoErgo Glove 80 split keyboard. Single-user, MIT, public at https://github.com/stevebargelt/pocket. PRD.md is the source of truth.
+- **Stack**: Node + Express + better-sqlite3 backend, React + TypeScript + Vite + Tailwind frontend, single port via `npm start`. Tests run with `node --test` (no framework).
+- **Where work tracking lives**: BACKLOG.md via the `forge backlog` CLI. Active items are deferred production-hygiene (idempotency, security headers, a11y) plus one feature (per-language code splits). User's stance: solo-user-on-localhost doesn't pay for production hygiene yet — don't propose those unsolicited.
+- **Any project-specific gates or conventions**:
+  - Migrations are forward-only; never edit a shipped migration. Keystrokes table is the source-of-truth invariant — never alter destructively.
+  - EMA fold must stay a pure left-fold (incremental write-path == full rebuild) so the no-drift invariant survives. See `src/server/ema.ts` header comment.
+  - Single keycode→glyph table in `src/server/keymap/keycodes.ts` feeds 4 consumers (SVG, mod glyphs, layer-drill extraction, thumb labels) — don't duplicate.
+  - User's keymap lives at `keymaps/` (gitignored). v1.2's holder watches the directory, picks newest `*.keymap`, debounces.
+  - Layout identity is content hash (not filename); re-export under a new UUID name upserts the same `layouts` row.
+  - Backlog item discipline: file new tickets when reds flag things you're deferring; closing happens at commit time. Notes-for-next-session block at the top of BACKLOG.md carries the handoff.
 
 <!-- forge:orchestrator-end -->
