@@ -1,0 +1,18 @@
+node_modules/
+dist/
+
+# SQLite database file (created at runtime)
+pocket.db
+pocket.db-journal
+pocket.db-wal
+pocket.db-shm
+data/*.db
+
+# Local WildChat-1M dump used only at curate time — never committed
+data/wildchat-raw/
+data/wildchat-1m.jsonl
+*.wildchat.jsonl
+
+# Misc
+.DS_Store
+*.log

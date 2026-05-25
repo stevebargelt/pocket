@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: theme("colors.ink.bg");
+  color: theme("colors.ink.text");
+  font-family: theme("fontFamily.mono");
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Light theme override (optional, dark is the default). */
+html[data-theme="light"] {
+  color-scheme: light;
+}
+html[data-theme="light"] body {
+  background: #f6f7f9;
+  color: #1c2230;
+}
+
+/* No caret animation — flow UX, no motion noise. */
+.caret {
+  border-left: 2px solid theme("colors.accent.DEFAULT");
+  margin-left: -1px;
+}
