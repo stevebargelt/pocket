@@ -37,52 +37,6 @@ Surfaced by red-security on Pocket v1 build. All low-severity for a localhost-on
 Source: red-security verdict on Pocket v1 build (task-build-4c7211).
 
 
-### #4 — v1 polish: EMA first-keystroke bias, payload validation, README cleanup
-Surfaced by red-wide on Pocket v1 build. Low priority polish:
-
-1. EMA seeding bias: first keystroke per key initializes the EMA with itself, weighting early samples disproportionately. Consider a warmup period (require 3-5 samples before EMA is 'live') or alternate seeding.
-2. POST /api/session payload validation is permissive. Add a zod-style schema check on incoming session payloads.
-3. README documentation inconsistencies with actual server behavior (e.g. ports, scripts). Audit and align.
-
-Source: red-wide verdict on Pocket v1 build (task-build-4c7211).
-
-
-### #5 — v1.2 dependency: HeatMap currently hardcodes QWERTY layout
-HeatMap.tsx renders a hardcoded QWERTY keyboard SVG. When v1.2 lands (ZMK keymap reader), the heat map should render the user's actual layout from the parsed keymap. Track this dependency so v1.2 includes the HeatMap refactor as part of its scope.
-
-Source: red-wide verdict on Pocket v1 build (task-build-4c7211).
-
-
-### #6 — Light theme is half-broken: only body styles, surfaces stay dark
-Settings exposes a dark/light theme toggle (App.tsx + settings.ts:applyTheme). The CSS override at src/client/styles/index.css:23-30 only retargets body background/text. All surface/border/muted Tailwind classes (bg-ink-surface, text-ink-muted, border-ink-border) keep dark palette values regardless of data-theme. Light mode therefore yields a light body with dark cards — visually broken.
-
-Resolve by either:
-(a) Remove the light option from Settings + Theme type + applyTheme. PRD only requires 'dark default'. Simplest.
-(b) Wire full Tailwind theme variants (or CSS custom properties) so the ink palette responds to data-theme=light.
-
-Source: red-frontend verdict on Pocket v1 build (task-build-4c7211). Confirmed by orchestrator code review on re-run task-build-776a99.
-
-
-### #7 — Naming: 'speedEma' field actually holds latency-ms, not speed
-Surfaced by red-wide on Pocket v1 build re-run (task-build-776a99, medium). The EMA tracks mean inter-keystroke latency in milliseconds, but the field/variable name is 'speedEma'. Lower values = faster. Rename to 'latencyMsEma' (or similar) across shared types, db schema, server folds, and client consumers to prevent future readers from inverting the metric.
-
-Source: red-wide verdict on Pocket v1 build re-run.
-
-
-### #8 — SessionPayload validation: time bounds + keystroke content
-Surfaced by red-backend (medium) and red-security (medium) on Pocket v1 build re-run (task-build-776a99). POST /api/session currently accepts session payloads with weak validation of time fields and keystroke content. Risk: bad data can pollute longitudinal trends (which are core to the product value, PRD Goal 3) and metric calculations.
-
-Add zod schema or hand-rolled validator covering:
-- started_at/ended_at as ISO timestamps, ended_at >= started_at, duration sanity-capped (e.g. <2 hours)
-- keystroke[].latency_ms non-negative, sanity-capped (e.g. <10000)
-- keystroke[].expected/actual character length checks
-- Reject payloads that don't pass; return 400 with a clear error.
-
-Related to ticket #4 (v1 polish: payload validation).
-
-Source: red-backend + red-security verdicts on Pocket v1 build re-run.
-
-
 ### #9 — A11y deepening: semantic structure + heatmap text/pattern overlay + nav labels
 Surfaced by red-frontend on Pocket v1 build duplicate task-build-fc5272. More concrete than backlog #2; merge or address together when doing the a11y pass:
 
@@ -112,4 +66,62 @@ Corpus considerations:
 - Curate-script analogous to scripts/curate-corpus.ts.
 
 This is NOT a v1.x hardening item — it's a real feature, just deferred.
+
+
+## Done (recent)
+
+### #5 — v1.2 dependency: HeatMap currently hardcodes QWERTY layout
+**Closed:** 2026-05-25.
+
+HeatMap.tsx renders a hardcoded QWERTY keyboard SVG. When v1.2 lands (ZMK keymap reader), the heat map should render the user's actual layout from the parsed keymap. Track this dependency so v1.2 includes the HeatMap refactor as part of its scope.
+
+Source: red-wide verdict on Pocket v1 build (task-build-4c7211).
+
+
+### #8 — SessionPayload validation: time bounds + keystroke content
+**Closed:** 2026-05-25.
+
+Surfaced by red-backend (medium) and red-security (medium) on Pocket v1 build re-run (task-build-776a99). POST /api/session currently accepts session payloads with weak validation of time fields and keystroke content. Risk: bad data can pollute longitudinal trends (which are core to the product value, PRD Goal 3) and metric calculations.
+
+Add zod schema or hand-rolled validator covering:
+- started_at/ended_at as ISO timestamps, ended_at >= started_at, duration sanity-capped (e.g. <2 hours)
+- keystroke[].latency_ms non-negative, sanity-capped (e.g. <10000)
+- keystroke[].expected/actual character length checks
+- Reject payloads that don't pass; return 400 with a clear error.
+
+Related to ticket #4 (v1 polish: payload validation).
+
+Source: red-backend + red-security verdicts on Pocket v1 build re-run.
+
+
+### #7 — Naming: 'speedEma' field actually holds latency-ms, not speed
+**Closed:** 2026-05-25.
+
+Surfaced by red-wide on Pocket v1 build re-run (task-build-776a99, medium). The EMA tracks mean inter-keystroke latency in milliseconds, but the field/variable name is 'speedEma'. Lower values = faster. Rename to 'latencyMsEma' (or similar) across shared types, db schema, server folds, and client consumers to prevent future readers from inverting the metric.
+
+Source: red-wide verdict on Pocket v1 build re-run.
+
+
+### #6 — Light theme is half-broken: only body styles, surfaces stay dark
+**Closed:** 2026-05-25.
+
+Settings exposes a dark/light theme toggle (App.tsx + settings.ts:applyTheme). The CSS override at src/client/styles/index.css:23-30 only retargets body background/text. All surface/border/muted Tailwind classes (bg-ink-surface, text-ink-muted, border-ink-border) keep dark palette values regardless of data-theme. Light mode therefore yields a light body with dark cards — visually broken.
+
+Resolve by either:
+(a) Remove the light option from Settings + Theme type + applyTheme. PRD only requires 'dark default'. Simplest.
+(b) Wire full Tailwind theme variants (or CSS custom properties) so the ink palette responds to data-theme=light.
+
+Source: red-frontend verdict on Pocket v1 build (task-build-4c7211). Confirmed by orchestrator code review on re-run task-build-776a99.
+
+
+### #4 — v1 polish: EMA first-keystroke bias, payload validation, README cleanup
+**Closed:** 2026-05-25.
+
+Surfaced by red-wide on Pocket v1 build. Low priority polish:
+
+1. EMA seeding bias: first keystroke per key initializes the EMA with itself, weighting early samples disproportionately. Consider a warmup period (require 3-5 samples before EMA is 'live') or alternate seeding.
+2. POST /api/session payload validation is permissive. Add a zod-style schema check on incoming session payloads.
+3. README documentation inconsistencies with actual server behavior (e.g. ports, scripts). Audit and align.
+
+Source: red-wide verdict on Pocket v1 build (task-build-4c7211).
 

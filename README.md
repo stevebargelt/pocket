@@ -1,5 +1,7 @@
 # Pocket
 
+<img width="120" src="docs/design/pocket-logo.svg" alt="Pocket" />
+
 *Break in your Glove 80.*
 
 A single-user, local-first typing tutor for the [MoErgo Glove 80](https://www.moergo.com/).
