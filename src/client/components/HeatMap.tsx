@@ -1,38 +1,52 @@
 import { useMemo, useState } from "react";
 import type { SessionKeyStat } from "../../shared/types";
+import type { Keymap } from "../../server/keymap/types";
+import { BOARD_HEIGHT, BOARD_WIDTH, KEY_LAYOUT } from "./glove80Layout";
 
 type Metric = "speed" | "error";
 
-const ROWS: string[][] = [
-  ["`", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "="],
-  ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "[", "]"],
-  ["a", "s", "d", "f", "g", "h", "j", "k", "l", ";", "'"],
-  ["z", "x", "c", "v", "b", "n", "m", ",", ".", "/"],
-];
-
-const UNIT = 38;
-const GAP = 5;
-const ROW_INDENT = [0, 0.5, 0.8, 1.2];
-
 const NO_DATA = "#222932";
-const ERROR_FULL_SCALE = 0.25; // 25% error rate == fully hot
+const ERROR_FULL_SCALE = 0.25;
 
 function hotColor(t: number): string {
   const clamped = Math.max(0, Math.min(1, t));
-  const hue = 150 * (1 - clamped); // 150 = green (good), 0 = red (bad)
+  const hue = 150 * (1 - clamped);
   return `hsl(${hue}, 68%, 45%)`;
 }
 
 function keyLabel(key: string): string {
-  if (key === " ") return "space";
+  if (key === " ") return "sp";
   return key;
 }
 
+function labelFontSize(label: string): number {
+  if (label.length <= 2) return 13;
+  if (label.length <= 4) return 10;
+  return 8;
+}
+
+/**
+ * Build a map from typeable character → KEY_LAYOUT index using the base layer
+ * (layer 0). Exported for unit testing.
+ */
+export function buildCharToKeyIndex(keymap: Keymap): Map<string, number> {
+  const base = keymap.layers[0];
+  if (!base) return new Map();
+  const m = new Map<string, number>();
+  for (let i = 0; i < base.bindings.length; i++) {
+    const ch = base.bindings[i].char;
+    if (ch !== null && !m.has(ch)) m.set(ch, i);
+  }
+  return m;
+}
+
 export function HeatMap({
+  keymap,
   keyStats,
   initialMetric = "speed",
   showToggle = true,
 }: {
+  keymap: Keymap;
   keyStats: SessionKeyStat[];
   initialMetric?: Metric;
   showToggle?: boolean;
@@ -50,15 +64,14 @@ export function HeatMap({
     return { minLat: Math.min(...lats), maxLat: Math.max(...lats) };
   }, [keyStats]);
 
+  const baseLayer = keymap.layers[0];
+
   function colorFor(stat: SessionKeyStat | undefined): string {
     if (!stat || stat.samples === 0) return NO_DATA;
     if (metric === "error") return hotColor(stat.errorRate / ERROR_FULL_SCALE);
     if (!isFinite(minLat) || maxLat === minLat) return hotColor(0.5);
     return hotColor((stat.meanLatencyMs - minLat) / (maxLat - minLat));
   }
-
-  const width = 13 * (UNIT + GAP) + UNIT * 2;
-  const height = (ROWS.length + 1) * (UNIT + GAP) + GAP;
 
   return (
     <div className="inline-block">
@@ -78,49 +91,45 @@ export function HeatMap({
           ))}
         </div>
       )}
-      <svg width={width} height={height} role="img" aria-label="per-key heat map">
-        {ROWS.map((row, r) =>
-          row.map((key, c) => {
-            const stat = byKey.get(key);
-            const x = GAP + (c + ROW_INDENT[r]) * (UNIT + GAP);
-            const y = GAP + r * (UNIT + GAP);
-            return (
-              <g key={`${r}-${c}`}>
-                <rect x={x} y={y} width={UNIT} height={UNIT} rx={5} fill={colorFor(stat)} />
-                <text
-                  x={x + UNIT / 2}
-                  y={y + UNIT / 2 + 4}
-                  textAnchor="middle"
-                  fontSize="13"
-                  fill={stat && stat.samples > 0 ? "#0c0f12" : "#5a6573"}
-                >
-                  {keyLabel(key)}
-                </text>
-              </g>
-            );
-          }),
-        )}
-        {/* space bar */}
-        {(() => {
-          const stat = byKey.get(" ");
-          const y = GAP + ROWS.length * (UNIT + GAP);
-          const x = GAP + 3 * (UNIT + GAP);
-          const w = 6 * (UNIT + GAP) - GAP;
+      <svg
+        width={BOARD_WIDTH}
+        height={BOARD_HEIGHT}
+        viewBox={`0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}`}
+        role="img"
+        aria-label="per-key heat map"
+        className="max-w-full"
+      >
+        {KEY_LAYOUT.map((geom, i) => {
+          const binding = baseLayer?.bindings[i];
+          const ch = binding?.char ?? null;
+          const stat = ch !== null ? byKey.get(ch) : undefined;
+          const rawLabel = ch !== null ? keyLabel(ch) : (binding?.glyph ?? "");
+          const label = rawLabel.length > 6 ? rawLabel.slice(0, 5) + "…" : rawLabel;
+          const hasData = stat !== undefined && stat.samples > 0;
           return (
-            <g>
-              <rect x={x} y={y} width={w} height={UNIT} rx={5} fill={colorFor(stat)} />
+            <g key={i}>
+              <rect
+                x={geom.x}
+                y={geom.y}
+                width={geom.w}
+                height={geom.h}
+                rx={6}
+                fill={colorFor(stat)}
+                stroke={geom.thumb ? "#e2b714" : "#2a313b"}
+                strokeWidth={geom.thumb ? 1.5 : 1}
+              />
               <text
-                x={x + w / 2}
-                y={y + UNIT / 2 + 4}
+                x={geom.x + geom.w / 2}
+                y={geom.y + geom.h / 2 + labelFontSize(label) / 3}
                 textAnchor="middle"
-                fontSize="12"
-                fill={stat && stat.samples > 0 ? "#0c0f12" : "#5a6573"}
+                fontSize={labelFontSize(label)}
+                fill={hasData ? "#0c0f12" : "#5a6573"}
               >
-                space
+                {label}
               </text>
             </g>
           );
-        })()}
+        })}
       </svg>
       <div className="mt-2 flex items-center gap-2 text-xs text-ink-muted">
         <span>{metric === "speed" ? "faster" : "fewer errors"}</span>

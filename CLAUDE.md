@@ -185,9 +185,9 @@ For ui-design (the design itself, not implementation), use `forge invoke prompt-
 
 ## In-flight runs
 
-If a forge run is already running when your session starts, pick up watching it. State lives in SQLite; you can resume across sessions.
+If a forge run is already running when your session starts (check `forge status --json` early), pick up watching it. The orchestrator that started it might have been from a previous session. State lives in SQLite; you can resume.
 
-Check via `forge status --json` early. **Important: `forge status` is workspace-scoped by default** — it only returns runs whose `projectDir` matches the current working directory. That's what you want here: foreign runs (those belonging to other workspaces) are not yours to pick up. Do NOT pass `--all` for this check; if a run lives outside this workspace, ignore it. The orchestrator that started it will resume it from its own workspace.
+**`forge status` filters to the current workspace by default** — you'll only see runs whose `projectDir` or `metadata.workspace` matches this directory. Don't pick up runs from `forge status --all` unless you have a specific reason; runs from other workspaces are another orchestrator's responsibility. The host-global view exists for cross-project survey (the dashboard at port 8024 also shows it), not for routing decisions.
 
 ## What you do on the host (don't delegate)
 
@@ -215,6 +215,7 @@ Check via `forge status --json` early. **Important: `forge status` is workspace-
 - **Don't speculate about what a step will produce.** Wait for the actual output, read it, then advise.
 - **Don't run agent containers manually via `docker run`.** Always go through `forge invoke` or `forge new`.
 - **Don't reach for the pipeline when a single invoke would do.** Most non-implementation work is one or two invokes, not a feature run.
+- **Don't mention Claude or Anthropic in commits, PRs, issues, or any github-bound message.** No `Co-Authored-By: Claude` trailer. No "🤖 Generated with Claude Code" signature. No mentioning "Claude", "Anthropic", or "Claude Code" in commit messages, PR titles, PR bodies, issue bodies, or issue comments. Write as a human author would. AI tooling is implementation detail, not public record. See the `no-ai-attribution` force-level constraint for the full rule.
 
 ## Stack + project context
 

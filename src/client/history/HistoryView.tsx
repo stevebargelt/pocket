@@ -4,6 +4,7 @@ import { CONTEXT_LABELS, type Context } from "../../shared/constants";
 import { summarizeByContext } from "../../shared/summary";
 import { api } from "../api";
 import { HeatMap } from "../components/HeatMap";
+import type { Keymap } from "../../server/keymap/types";
 import { ContextSummary } from "./ContextSummary";
 import { TrendChart } from "./TrendChart";
 
@@ -32,7 +33,7 @@ function FilterButton({
   );
 }
 
-export function HistoryView() {
+export function HistoryView({ keymap }: { keymap: Keymap | null }) {
   const [history, setHistory] = useState<HistoryEntry[] | null>(null);
   const [error, setError] = useState(false);
   const [idx, setIdx] = useState(0);
@@ -130,7 +131,14 @@ export function HistoryView() {
             error <span className="text-ink-bright">{(current.errorRate * 100).toFixed(1)}%</span>
           </span>
         </div>
-        <HeatMap key={current.id} keyStats={current.keyStats} />
+        {keymap ? (
+          <HeatMap key={current.id} keymap={keymap} keyStats={current.keyStats} />
+        ) : (
+          <p className="text-sm text-ink-muted">
+            No keymap loaded — load a <span className="font-mono">.keymap</span> file to see the
+            heat map.
+          </p>
+        )}
       </div>
     </div>
   );

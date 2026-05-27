@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { PracticeMode, Recommendation, WeakUnit } from "../../shared/types";
 import { type Context, CONTEXT_LABELS } from "../../shared/constants";
 import { api } from "../api";
@@ -23,7 +23,7 @@ function Chips({ units }: { units: WeakUnit[] }) {
   );
 }
 
-export function RecommenderCard({ onStart, context }: { onStart: (mode: PracticeMode) => void; context?: Context }) {
+export function RecommenderCard({ onStart, context, extraContent, headerExtra }: { onStart: (mode: PracticeMode) => void; context?: Context; extraContent?: ReactNode; headerExtra?: ReactNode }) {
   const contextLabel = context ? CONTEXT_LABELS[context] : "prompts";
   const [rec, setRec] = useState<Recommendation | null>(null);
   const [error, setError] = useState(false);
@@ -36,12 +36,15 @@ export function RecommenderCard({ onStart, context }: { onStart: (mode: Practice
     <div className="mx-auto max-w-2xl rounded-lg border border-ink-border bg-ink-surface p-6">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg text-ink-bright">Today's practice</h2>
-        <span
-          className="rounded bg-accent-dim px-2 py-0.5 text-xs uppercase tracking-wide text-ink-bright"
-          title="A transparent rule of thumb, not science. Ignore it whenever you like."
-        >
-          heuristic
-        </span>
+        <div className="flex items-center gap-3">
+          {headerExtra}
+          <span
+            className="rounded bg-accent-dim px-2 py-0.5 text-xs uppercase tracking-wide text-ink-bright"
+            title="A transparent rule of thumb, not science. Ignore it whenever you like."
+          >
+            heuristic
+          </span>
+        </div>
       </div>
 
       {error && <p className="text-err">Couldn't load a recommendation — is the server running?</p>}
@@ -71,7 +74,7 @@ export function RecommenderCard({ onStart, context }: { onStart: (mode: Practice
         </div>
       )}
 
-      <div className="flex gap-3">
+      <div className="flex items-center gap-3">
         <button
           onClick={() => onStart("targeted")}
           disabled={!rec || !rec.hasEnoughData}
@@ -81,12 +84,16 @@ export function RecommenderCard({ onStart, context }: { onStart: (mode: Practice
           practice my weak spots
         </button>
         <button
+          id="start-random-session"
           onClick={() => onStart("random")}
           className="rounded border border-ink-border px-4 py-2 text-ink-text hover:bg-ink-bg"
+          title="Start a session with a random prompt"
         >
-          {rec && rec.hasEnoughData ? `ignore — random ${contextLabel}` : `start with random ${contextLabel}`}
+          {rec && rec.hasEnoughData ? `random ${contextLabel}` : `start with random ${contextLabel}`}
         </button>
       </div>
+
+      {extraContent}
     </div>
   );
 }

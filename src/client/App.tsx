@@ -8,7 +8,6 @@ import { RecommenderCard } from "./recommender/RecommenderCard";
 import { ContextPicker } from "./session/ContextPicker";
 import { LayerPicker, type LayerSelection } from "./session/LayerPicker";
 import { KeymapView } from "./components/KeymapView";
-import { HeatMap } from "./components/HeatMap";
 import { TypingSurface, type SessionResult } from "./session/TypingSurface";
 import { ResultsScreen } from "./session/ResultsScreen";
 import { HistoryView } from "./history/HistoryView";
@@ -37,6 +36,12 @@ function keymapSignature(km: Keymap): string {
   return (h >>> 0).toString(16);
 }
 
+function hashToView(hash: string): View {
+  if (hash === "#/history") return "history";
+  if (hash === "#/settings") return "settings";
+  return "practice";
+}
+
 function NavButton({
   active,
   onClick,
@@ -49,8 +54,10 @@ function NavButton({
   return (
     <button
       onClick={onClick}
-      className={`rounded px-3 py-1 text-sm ${
-        active ? "bg-ink-surface text-ink-bright" : "text-ink-muted hover:text-ink-text"
+      className={`rounded px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 ${
+        active
+          ? "border border-accent bg-ink-surface text-ink-bright"
+          : "border border-ink-border text-ink-muted hover:border-accent hover:text-ink-text"
       }`}
     >
       {children}
@@ -86,8 +93,20 @@ function SettingsView({
 }
 
 export default function App() {
-  const [view, setView] = useState<View>("practice");
+  const [view, setViewState] = useState<View>(() => hashToView(window.location.hash));
   const [phase, setPhase] = useState<Phase>("idle");
+
+  const setView = useCallback((v: View) => {
+    setViewState(v);
+    window.location.hash = `/${v}`;
+  }, []);
+
+  useEffect(() => {
+    const onHashChange = () => setViewState(hashToView(window.location.hash));
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
   const [selectedContext, setSelectedContext] = useState<Context>(() => settings.context);
   const [generated, setGenerated] = useState<GeneratedText | null>(null);
@@ -102,6 +121,7 @@ export default function App() {
   const [thumbSelected, setThumbSelected] = useState(false);
   const [fingerprintChanged, setFingerprintChanged] = useState(false);
   const [drillError, setDrillError] = useState<string | null>(null);
+  const [restrictToLayer, setRestrictToLayer] = useState(false);
 
   const startSession = useCallback(
     async (m: PracticeMode) => {
@@ -152,6 +172,7 @@ export default function App() {
     } else {
       setThumbSelected(false);
       setViewedLayerIndex(selection.index);
+      if (selection.index === 0) setRestrictToLayer(false);
     }
   }, []);
 
@@ -191,21 +212,36 @@ export default function App() {
     });
   }, []);
 
+  const handleStart = useCallback(
+    async (m: PracticeMode) => {
+      if (restrictToLayer) {
+        await startDrill();
+      } else {
+        await startSession(m);
+      }
+    },
+    [restrictToLayer, startDrill, startSession],
+  );
+
   const goPractice = useCallback(() => {
     setView("practice");
     setPhase("idle");
-  }, []);
+  }, [setView]);
 
   const selection: LayerSelection = thumbSelected
     ? { kind: "thumb" }
     : { kind: "layer", index: viewedLayerIndex };
   const viewedLayer = layers.find((l) => l.index === viewedLayerIndex);
   const canDrill = thumbSelected || (viewedLayer?.drillable ?? false);
-  const drillButtonLabel = thumbSelected
-    ? "start thumb-cluster drill"
-    : viewedLayer
-      ? `start ${viewedLayer.name} drill`
-      : "start layer drill";
+
+  const showToggle = thumbSelected || viewedLayerIndex !== 0;
+  const toggleDisabled = !canDrill;
+  const toggleLabel = thumbSelected
+    ? "Restrict to thumb cluster"
+    : `Restrict to ${viewedLayer?.name ?? "layer"}`;
+  const toggleTitle = toggleDisabled
+    ? "this layer has no typeable keys to drill"
+    : "Restrict practice to this layer only";
 
   return (
     <div className="min-h-full">
@@ -272,49 +308,65 @@ export default function App() {
       <main className="px-6 py-10">
         {view === "settings" && <SettingsView settings={settings} onChange={onSettingsChange} />}
 
-        {view === "history" && <HistoryView />}
+        {view === "history" && <HistoryView keymap={keymap} />}
 
         {view === "practice" && (
           <>
             {phase === "idle" && (
               <div className="space-y-8">
+                <ContextPicker value={selectedContext} onChange={onContextChange} />
+                <RecommenderCard
+                  onStart={handleStart}
+                  context={selectedContext}
+                  headerExtra={showToggle ? (
+                    <label
+                      htmlFor="restrict-to-layer"
+                      className={`flex items-center gap-3 ${toggleDisabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+                    >
+                      <div className="relative inline-flex items-center">
+                        <input
+                          type="checkbox"
+                          id="restrict-to-layer"
+                          title={toggleTitle}
+                          className="peer sr-only"
+                          checked={restrictToLayer}
+                          onChange={(e) => setRestrictToLayer(e.target.checked)}
+                          disabled={toggleDisabled}
+                        />
+                        <div className="h-5 w-9 rounded-full bg-ink-border transition-colors peer-checked:bg-accent peer-disabled:opacity-40" />
+                        <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-ink-bg transition-transform peer-checked:translate-x-4" />
+                      </div>
+                      <span className={`text-sm ${toggleDisabled ? "text-ink-muted opacity-40" : "text-ink-text"}`}>
+                        {toggleLabel}
+                      </span>
+                    </label>
+                  ) : undefined}
+                  extraContent={drillError ? (
+                    <p role="alert" className="mt-2 text-sm text-err">
+                      {drillError}
+                    </p>
+                  ) : undefined}
+                />
+
                 {keymap ? (
                   <section className="flex flex-col items-center gap-4">
+                    <LayerPicker
+                      layers={layers}
+                      value={selection}
+                      onChange={onLayerSelectionChange}
+                    />
                     <KeymapView
                       keymap={keymap}
                       activeLayerIndex={viewedLayerIndex}
                       fingerprintChanged={fingerprintChanged}
                       updatedAt={keymap.parsedAt}
                     />
-                    <LayerPicker
-                      layers={layers}
-                      value={selection}
-                      onChange={onLayerSelectionChange}
-                    />
-                    <div className="flex flex-col items-center gap-1">
-                      <button
-                        onClick={startDrill}
-                        disabled={!canDrill}
-                        title={
-                          canDrill ? undefined : "this layer binds no typeable keys to drill"
-                        }
-                        className="rounded bg-accent px-4 py-2 font-semibold text-ink-bg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {drillButtonLabel}
-                      </button>
-                      {drillError && (
-                        <p role="alert" className="text-sm text-err">
-                          {drillError}
-                        </p>
-                      )}
-                    </div>
                   </section>
                 ) : (
                   keymapLoaded && (
                     <section className="flex flex-col items-center gap-2">
-                      <HeatMap keyStats={[]} showToggle={false} />
                       <p className="max-w-md text-center text-xs text-ink-muted">
-                        No ZMK keymap loaded — showing a generic layout. Drop a{" "}
+                        No ZMK keymap loaded. Drop a{" "}
                         <span className="font-mono">.keymap</span> file in{" "}
                         <span className="font-mono">keymaps/</span> (or set{" "}
                         <span className="font-mono">POCKET_KEYMAP_PATH</span>) to see your real
@@ -323,11 +375,6 @@ export default function App() {
                     </section>
                   )
                 )}
-
-                <div className="border-t border-ink-border pt-8">
-                  <ContextPicker value={selectedContext} onChange={onContextChange} />
-                  <RecommenderCard onStart={startSession} context={selectedContext} />
-                </div>
               </div>
             )}
             {phase === "loading" && <p className="text-center text-ink-muted">loading prompts…</p>}
@@ -348,6 +395,7 @@ export default function App() {
                 context={selectedContext}
                 targetSeconds={settings.sessionSeconds}
                 targetChars={generated.text.length}
+                keymap={keymap}
                 onAgain={() => setPhase("idle")}
                 onViewHistory={() => setView("history")}
               />

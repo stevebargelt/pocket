@@ -4,6 +4,7 @@ import { type Context, CONTEXT_LABELS } from "../../shared/constants";
 import { computeMetrics } from "../../shared/metrics";
 import { api } from "../api";
 import { HeatMap } from "../components/HeatMap";
+import type { Keymap } from "../../server/keymap/types";
 import type { SessionResult } from "./TypingSurface";
 
 function aggregateKeyStats(result: SessionResult): SessionKeyStat[] {
@@ -38,6 +39,7 @@ export function ResultsScreen({
   context,
   targetSeconds,
   targetChars,
+  keymap,
   onAgain,
   onViewHistory,
 }: {
@@ -46,6 +48,7 @@ export function ResultsScreen({
   context: Context;
   targetSeconds: number;
   targetChars: number;
+  keymap: Keymap | null;
   onAgain: () => void;
   onViewHistory: () => void;
 }) {
@@ -94,7 +97,14 @@ export function ResultsScreen({
 
       <div className="mb-8 rounded-lg border border-ink-border bg-ink-surface p-4">
         <h3 className="mb-3 text-sm text-ink-muted">per-key heat map</h3>
-        <HeatMap keyStats={keyStats} />
+        {keymap ? (
+          <HeatMap keymap={keymap} keyStats={keyStats} />
+        ) : (
+          <p className="text-sm text-ink-muted">
+            No keymap loaded — load a <span className="font-mono">.keymap</span> file to see the
+            heat map.
+          </p>
+        )}
       </div>
 
       <div className="flex gap-3">

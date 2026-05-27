@@ -40,7 +40,7 @@ export const RECOMMENDED_MINUTES = 10;
 export const WEAKNESS_ERROR_WEIGHT = 1.5;
 
 /** How many corpus lines a generated practice text strings together. */
-export const GENERATED_LINE_COUNT = 6;
+export const GENERATED_LINE_COUNT = 2;
 
 /** Characters-per-word divisor used by all WPM math (industry standard). */
 export const CHARS_PER_WORD = 5;
