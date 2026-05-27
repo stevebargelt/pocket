@@ -1,20 +1,7 @@
 # Pocket — Backlog
 
 ## Notes for next session
-**Last session ended 2026-05-25.** Pocket v1.2.1 + logo committed and pushed to https://github.com/stevebargelt/pocket. 106/106 tests passing. Active server is local-only at http://localhost:3000.
 
-**Where to pick up:**
-- **v1.3 — shortcut drill mode** is the user's stated next interest. CMD-C/V/A/X/Z/S, CTRL-C/B, Backspace, Delete. Must be its own context value (extend CONTEXTS enum with 'shortcuts'). Browser-observable via keydown+modifier state, NOT browser-eaten ones (CMD-W/T/Q/R/N skip). House style is hand-rolled validation; same for the new shortcut-capture mode.
-- **v2 — longitudinal layout A/B** is the other roadmap item. Needs accumulated multi-layout data, so most useful after the user has used a non-factory keymap for a while.
-
-**Backlog status (run `forge backlog list --status Active`):**
-- #1 backend hardening, #3 security headers, #9 a11y deepening, #10 per-language code splits.
-- All are deliberately deferred — user's stance is solo-user-on-localhost doesn't pay for production hygiene yet.
-- Closed by recent commits: #4 #5 #6 #7 #8 (in v1.2.1 + v1.2 commits). #2 just closed (subsumed by #9).
-
-**Known forge quirk:** gate-rationale propagation is unreliable. Use `forge invoke engineer` for scope-critical follow-ups instead of relying on advance/request-changes rationale reaching the next phase. See memory `reference_forge_propagation_quirk.md`.
-
-**No in-flight forge runs.** `forge status --json` should show no active runs for this workspace.
 
 ## Active
 
