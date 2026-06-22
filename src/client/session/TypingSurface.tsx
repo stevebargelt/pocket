@@ -44,8 +44,12 @@ export function TypingSurface({
     if (!started) return;
     const id = setInterval(() => {
       const elapsed = (Date.now() - startedAtRef.current) / 1000;
-      setRemaining(Math.max(0, Math.ceil(durationSeconds - elapsed)));
-      if (elapsed >= durationSeconds) finish();
+      if (durationSeconds === 0) {
+        setRemaining(Math.ceil(elapsed));
+      } else {
+        setRemaining(Math.max(0, Math.ceil(durationSeconds - elapsed)));
+        if (elapsed >= durationSeconds) finish();
+      }
     }, 250);
     return () => clearInterval(id);
   }, [started, durationSeconds, finish]);
@@ -74,7 +78,17 @@ export function TypingSurface({
             err <span className="text-ink-bright">{(live.errorRate * 100).toFixed(0)}%</span>
           </span>
         </div>
-        {!started && <span className="text-ink-muted">just start typing…</span>}
+        <div className="flex items-center gap-4">
+          {!started && <span className="text-ink-muted">just start typing…</span>}
+          {started && (
+            <button
+              onClick={finish}
+              className="rounded border border-ink-border px-2 py-0.5 text-xs text-ink-muted hover:border-accent hover:text-ink-text"
+            >
+              stop
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="select-none whitespace-pre-wrap break-words font-mono text-2xl leading-relaxed tracking-wide">
