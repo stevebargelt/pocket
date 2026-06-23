@@ -46,10 +46,11 @@ test("directory watcher debounces a rapid edit burst into a single reload", asyn
 
   let reloads = 0;
   let lastFingerprint = "";
+  const debounceMs = 80;
   const holder = new KeymapHolder({
     dir,
     watch: true,
-    debounceMs: 80,
+    debounceMs,
     onReload: (_km, fp) => {
       reloads++;
       lastFingerprint = fp;
@@ -63,7 +64,14 @@ test("directory watcher debounces a rapid edit burst into a single reload", asyn
   const future = new Date(Date.now() + 5_000);
   utimesSync(winner, future, future);
 
-  await sleep(400); // > debounceMs + fs.watch latency
+  // Poll until the reload signal arrives (generous 2 s deadline tolerates CPU starvation
+  // under full-suite concurrency). Once it fires, wait an additional settle window to
+  // confirm no second reload is queued before asserting the final count.
+  const deadline = Date.now() + 2000;
+  while (reloads === 0 && Date.now() < deadline) {
+    await sleep(20);
+  }
+  await sleep(debounceMs * 5); // settle: confirm no second reload fires
 
   assert.equal(reloads, 1, "the burst coalesced into exactly one reload");
   assert.equal(holder.getActiveFingerprint(), lastFingerprint);
