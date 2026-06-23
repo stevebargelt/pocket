@@ -75,9 +75,9 @@ function validateSessionPayload(payload: SessionPayload): string | null {
   }
 
   // Target fields are optional on the wire (saveSession tolerates absence); when
-  // present they must be sane positive integers.
-  if (payload.targetSeconds !== undefined && !isPositiveInt(payload.targetSeconds)) {
-    return "targetSeconds must be a positive integer";
+  // present they must be sane non-negative integers. 0 is the "unlimited" marker.
+  if (payload.targetSeconds !== undefined && !isNonNegativeInt(payload.targetSeconds)) {
+    return "targetSeconds must be a non-negative integer";
   }
   if (payload.targetChars !== undefined && !isPositiveInt(payload.targetChars)) {
     return "targetChars must be a positive integer";

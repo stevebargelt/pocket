@@ -85,7 +85,9 @@ function SettingsView({
           <option value={30}>30 seconds</option>
           <option value={60}>60 seconds</option>
           <option value={120}>2 minutes</option>
+          <option value={180}>3 minutes</option>
           <option value={300}>5 minutes</option>
+          <option value={0}>Unlimited</option>
         </select>
       </label>
     </div>
