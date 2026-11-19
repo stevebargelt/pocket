@@ -13,15 +13,15 @@ const customSrc = readFileSync(resolve(HERE, "fixtures/keymaps/custom.keymap"), 
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-test("holder with no keymap returns null + the sentinel fingerprint", () => {
+test("holder with no keymap returns null + the sentinel fingerprint", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "pocket-km-empty-"));
   const holder = new KeymapHolder({ dir, watch: false });
+  t.after(() => holder.close());
   assert.equal(holder.getActiveKeymap(), null);
   assert.equal(holder.getActiveFingerprint(), LAYOUT_FINGERPRINT);
-  holder.close();
 });
 
-test("holder loads the newest *.keymap in its directory", () => {
+test("holder loads the newest *.keymap in its directory", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "pocket-km-newest-"));
   const older = join(dir, "aaa.keymap");
   const newer = join(dir, "zzz.keymap");
@@ -33,14 +33,14 @@ test("holder loads the newest *.keymap in its directory", () => {
 
   assert.equal(newestKeymap(dir), newer);
   const holder = new KeymapHolder({ dir, watch: false });
+  t.after(() => holder.close());
   assert.ok(
     holder.getActiveKeymap()!.layers.some((l) => l.name === "Symbols"),
     "active keymap is the newer custom variant (renamed Symbols layer)",
   );
-  holder.close();
 });
 
-test("directory watcher debounces a rapid edit burst into a single reload", async () => {
+test("directory watcher debounces a rapid edit burst into a single reload", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "pocket-km-watch-"));
   writeFileSync(join(dir, "initial.keymap"), factorySrc);
 
@@ -56,6 +56,7 @@ test("directory watcher debounces a rapid edit burst into a single reload", asyn
       lastFingerprint = fp;
     },
   });
+  t.after(() => holder.close());
 
   // Mimic the editor's temp-write+rename burst: several back-to-back writes.
   for (let i = 0; i < 5; i++) writeFileSync(join(dir, `export-${i}.keymap`), customSrc);
@@ -80,5 +81,4 @@ test("directory watcher debounces a rapid edit burst into a single reload", asyn
     holder.getActiveKeymap()!.layers.some((l) => l.name === "Symbols"),
     "reloaded to the newest (custom) export",
   );
-  holder.close();
 });
