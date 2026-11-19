@@ -62,7 +62,8 @@ npm run build
 The `CI` GitHub Actions workflow (`.github/workflows/ci.yml`, check `CI / check`)
 runs exactly these on every pull request and every push to `main`; a PR is
 expected to be green before merge. Tests use in-memory or temp-directory SQLite
-databases and never touch `pocket.db`.
+databases and never touch `pocket.db`. The CI job times out after 10 minutes, so
+a hung test fails fast instead of running to GitHub's 360-minute default.
 
 ## What v1 does
 
