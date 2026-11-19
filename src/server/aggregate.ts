@@ -61,25 +61,33 @@ function writeFoldMap(
   }
 }
 
-function readOrderedKeystrokes(db: Db): KeystrokeRecord[] {
+/**
+ * Stream the whole keystroke log in id order, one record at a time. Uses
+ * `.iterate()` so only the current row is materialised. While the returned
+ * generator is open, better-sqlite3 forbids any other statement on this
+ * connection, so callers must consume it fully before writing.
+ */
+export function* readOrderedKeystrokes(db: Db): Generator<KeystrokeRecord> {
   const rows = db
     .prepare(
       "SELECT idx, expected_key, actual_key, latency_ms, correct FROM keystrokes ORDER BY id",
     )
-    .all() as Array<{
+    .iterate() as IterableIterator<{
     idx: number;
     expected_key: string;
     actual_key: string;
     latency_ms: number;
     correct: number;
   }>;
-  return rows.map((r) => ({
-    index: r.idx,
-    expectedChar: r.expected_key,
-    actualChar: r.actual_key,
-    latencyMs: r.latency_ms,
-    correct: !!r.correct,
-  }));
+  for (const r of rows) {
+    yield {
+      index: r.idx,
+      expectedChar: r.expected_key,
+      actualChar: r.actual_key,
+      latencyMs: r.latency_ms,
+      correct: !!r.correct,
+    };
+  }
 }
 
 /** Write one session_key_stats row per expected key for this session. */
@@ -114,15 +122,20 @@ export function updateAggregatesIncremental(
   writeFoldMap(db, "bigram", fp, folded.bigrams, now);
 }
 
-/** Recompute the EMA cache from scratch from the full keystroke log. */
+/**
+ * Recompute the EMA cache from scratch from the full keystroke log.
+ *
+ * Runs in one transaction so the read and the write see one consistent
+ * snapshot. The keystroke stream is folded to completion before any DELETE:
+ * better-sqlite3 throws if another statement runs while an iterator is open.
+ */
 export function rebuildAggregatesFromKeystrokes(
   db: Db,
   fp: string = LAYOUT_FINGERPRINT,
   now: number = Date.now(),
 ): void {
-  const all = readOrderedKeystrokes(db);
-  const folded = foldKeystrokes(all, EMA_ALPHA);
   const rebuild = db.transaction(() => {
+    const folded = foldKeystrokes(readOrderedKeystrokes(db), EMA_ALPHA);
     db.prepare("DELETE FROM key_stats WHERE layout_fingerprint = ?").run(fp);
     db.prepare("DELETE FROM bigram_stats WHERE layout_fingerprint = ?").run(fp);
     writeFoldMap(db, "key", fp, folded.keys, now);

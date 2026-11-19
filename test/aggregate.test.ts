@@ -2,7 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openDb } from "../src/server/db";
 import { saveSession } from "../src/server/sessions";
-import { rebuildAggregatesFromKeystrokes, computeSessionKeyStats } from "../src/server/aggregate";
+import {
+  rebuildAggregatesFromKeystrokes,
+  computeSessionKeyStats,
+  readOrderedKeystrokes,
+} from "../src/server/aggregate";
 import { LAYOUT_FINGERPRINT, WARMUP_SAMPLES } from "../src/shared/constants";
 import type { KeystrokeRecord, SessionPayload } from "../src/shared/types";
 
@@ -94,4 +98,60 @@ test("computeSessionKeyStats: mean latency and error rate per key", () => {
     { key: "a", meanLatencyMs: 200, errorRate: 0.5, samples: 2 },
     { key: "b", meanLatencyMs: 200, errorRate: 0, samples: 1 },
   ]);
+});
+
+function seedSessions(db: ReturnType<typeof openDb>): void {
+  const lines = ["the quick brown fox", "jumps over the lazy dog", "hello there hello"];
+  lines.forEach((line, i) => saveSession(db, payloadFromText(line, 2_000 + i * 100_000)));
+}
+
+test("rebuild streams keystrokes: never calls .all() on a keystrokes query", () => {
+  const db = openDb(":memory:");
+  seedSessions(db);
+  const before = snapshot(db);
+
+  const realPrepare = db.prepare.bind(db);
+  let keystrokeStatements = 0;
+  (db as { prepare: typeof db.prepare }).prepare = ((sql: string) => {
+    const stmt = realPrepare(sql);
+    if (sql.includes("FROM keystrokes")) {
+      keystrokeStatements++;
+      stmt.all = () => {
+        throw new Error(`.all() called on keystrokes query: ${sql}`);
+      };
+    }
+    return stmt;
+  }) as typeof db.prepare;
+
+  rebuildAggregatesFromKeystrokes(db, LAYOUT_FINGERPRINT, Date.now());
+  (db as { prepare: typeof db.prepare }).prepare = realPrepare;
+
+  assert.ok(keystrokeStatements > 0, "rebuild must have read the keystrokes table");
+  assert.deepEqual(snapshot(db), before);
+  db.close();
+});
+
+test("readOrderedKeystrokes returns a lazy iterable matching the full id-ordered read", () => {
+  const db = openDb(":memory:");
+  seedSessions(db);
+
+  const result = readOrderedKeystrokes(db);
+  assert.equal(Array.isArray(result), false);
+  assert.equal(typeof result[Symbol.iterator], "function");
+
+  const expected = (
+    db
+      .prepare("SELECT idx, expected_key, actual_key, latency_ms, correct FROM keystrokes ORDER BY id")
+      .all() as Array<{ idx: number; expected_key: string; actual_key: string; latency_ms: number; correct: number }>
+  ).map((r) => ({
+    index: r.idx,
+    expectedChar: r.expected_key,
+    actualChar: r.actual_key,
+    latencyMs: r.latency_ms,
+    correct: !!r.correct,
+  }));
+  const streamed = [...result];
+  assert.ok(streamed.length > 0);
+  assert.deepEqual(streamed, expected);
+  db.close();
 });
