@@ -195,6 +195,8 @@ parsed bindings + layer names (`src/server/keymap/fingerprint.ts`), so every
 result is attributable to the exact layout that produced it and pre-keymap data
 stays cleanly segregated.
 
+Architecture diagrams: [docs/architecture/diagrams.md](docs/architecture/diagrams.md).
+
 ## Performance targets
 
 - Keystroke logging adds no perceptible input lag (no synchronous or network I/O
