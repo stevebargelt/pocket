@@ -130,3 +130,37 @@ test("incremental fold == from-scratch rebuild across the warmup boundary", () =
   approx(part2.latencyMsEma, full.latencyMsEma);
   approx(part2.errorRateEma, full.errorRateEma);
 });
+
+test("foldKeystrokes: a generator over a sequence folds identically to the array", () => {
+  // Covers a re-typed position (1 -> 1), a session boundary (index back to 0),
+  // and a mix of correct and incorrect strokes, long enough to pass warmup.
+  const seq = [
+    ks(0, "t", true, 120),
+    ks(1, "h", false, 210),
+    ks(1, "h", true, 95),
+    ks(2, "e", true, 105),
+    ks(3, " ", true, 80),
+    ks(4, "t", false, 260),
+    ks(5, "h", true, 90),
+    ks(6, "e", true, 100),
+    // session boundary: indexes restart at 0
+    ks(0, "e", true, 130),
+    ks(1, "t", true, 115),
+    ks(2, "h", false, 300),
+    ks(3, "e", true, 85),
+    ks(3, "e", true, 70),
+    ks(4, "t", true, 110),
+  ];
+  function* stream(): Generator<KeystrokeRecord> {
+    for (const k of seq) yield k;
+  }
+  const fromArray = foldKeystrokes(seq, 0.2);
+  const fromStream = foldKeystrokes(stream(), 0.2);
+  assert.ok(fromArray.keys.get("h")!.samples > WARMUP_SAMPLES, "fixture must pass warmup");
+  assert.deepEqual(fromStream.keys, fromArray.keys);
+  assert.deepEqual(fromStream.bigrams, fromArray.bigrams);
+  // Guard against the fold silently producing nothing for both inputs.
+  assert.ok(fromArray.bigrams.has("th"));
+  assert.ok(!fromArray.bigrams.has("hh"), "no bigram across a re-typed position");
+  assert.ok(!fromArray.bigrams.has("ee"), "no bigram across a session boundary or re-typed position");
+});

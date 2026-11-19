@@ -73,31 +73,37 @@ function accumulate(
 /**
  * Fold an ordered keystroke stream into per-key and per-bigram EMA stats.
  *
+ * Accepts any iterable (an array, or a generator streaming rows from SQLite)
+ * and consumes it in a single forward pass, holding only the previous record,
+ * so memory is bounded by the number of distinct keys and bigrams rather than
+ * the number of keystrokes.
+ *
  * Per-key: every keystroke attempt contributes (latency, wrong?).
  * Per-bigram: each pair of consecutive keystrokes that sit at consecutive text
- * positions (`next.index === cur.index + 1`) contributes. That index check
+ * positions (`k.index === prev.index + 1`) contributes, with the second
+ * stroke's latency and an error if either stroke was wrong. That index check
  * makes the unit text-space (so it matches `extractBigrams` / `containsBigram`),
  * skips re-typed-position artifacts, and never forms a bigram across a session
  * boundary (each session's indexes restart at 0).
  */
 export function foldKeystrokes(
-  ordered: KeystrokeRecord[],
+  ordered: Iterable<KeystrokeRecord>,
   alpha = EMA_ALPHA,
   seed?: FoldResult,
 ): FoldResult {
   const keys = seed?.keys ?? new Map<string, FoldStat>();
   const bigrams = seed?.bigrams ?? new Map<string, FoldStat>();
 
-  for (let i = 0; i < ordered.length; i++) {
-    const k = ordered[i];
+  let prev: KeystrokeRecord | undefined;
+  for (const k of ordered) {
     accumulate(keys, k.expectedChar, k.latencyMs, k.correct ? 0 : 1, alpha);
 
-    const next = ordered[i + 1];
-    if (next && next.index === k.index + 1) {
-      const unit = bigramOf(k.expectedChar, next.expectedChar);
-      const bothCorrect = k.correct && next.correct;
-      accumulate(bigrams, unit, next.latencyMs, bothCorrect ? 0 : 1, alpha);
+    if (prev && k.index === prev.index + 1) {
+      const unit = bigramOf(prev.expectedChar, k.expectedChar);
+      const bothCorrect = prev.correct && k.correct;
+      accumulate(bigrams, unit, k.latencyMs, bothCorrect ? 0 : 1, alpha);
     }
+    prev = k;
   }
 
   return { keys, bigrams };
