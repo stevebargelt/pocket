@@ -48,6 +48,22 @@ In dev, the Vite server proxies `/api/*` to the Express server.
 | `npm test` | Run the unit + e2e test suite |
 | `npm run typecheck` | `tsc --noEmit` |
 
+### Checks
+
+Node 24 (from `.nvmrc`). Run these before opening a pull request:
+
+```bash
+npm ci
+npm run typecheck
+npm test
+npm run build
+```
+
+The `CI` GitHub Actions workflow (`.github/workflows/ci.yml`, check `CI / check`)
+runs exactly these on every pull request and every push to `main`; a PR is
+expected to be green before merge. Tests use in-memory or temp-directory SQLite
+databases and never touch `pocket.db`.
+
 ## What v1 does
 
 - **Practice mode** — pick a context (v1.1, below) then practice. The original v1
