@@ -194,6 +194,9 @@ thumb-key sequences still have material when no corpus line happens to fit.
 The parsed `.keymap` is **the user's own layout**, read from a git-ignored
 `keymaps/` directory and **never redistributed** (full note in `../CREDITS.md`).
 Pocket resolves the file from `POCKET_KEYMAP_PATH` or the most-recently-modified
-`*.keymap` under `keymaps/`; no exported MoErgo layout is ever committed to this
+`*.keymap` under `keymaps/`; no user's exported layout is ever committed to this
 repo, and the ZMK keymap format it parses is MIT (ZMK firmware — see
-`../CREDITS.md`).
+`../CREDITS.md`). The one MoErgo layout in the repo is the MIT-licensed factory
+default (plus a variant derived from it) under `test/fixtures/keymaps/`, used
+only as test fixtures with its original copyright and licence header intact
+(see `../CREDITS.md`).

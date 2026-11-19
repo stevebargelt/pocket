@@ -20,7 +20,7 @@ data/enron-raw/
 .DS_Store
 *.log
 
-keymaps/
+/keymaps/
 
 # forge — per-developer claude-code config (machine-local, not committed)
 .claude/settings.local.json
