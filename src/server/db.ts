@@ -9,6 +9,17 @@ const DEFAULT_DB_PATH = resolve(HERE, "../../pocket.db");
 
 export type Db = Database.Database;
 
+/**
+ * Set PRAGMA user_version. SQLite cannot bind a parameter in a PRAGMA, so the
+ * value is interpolated — and therefore must be a non-negative safe integer.
+ */
+export function setUserVersion(db: Db, version: number): void {
+  if (!Number.isSafeInteger(version) || version < 0) {
+    throw new Error(`user_version must be a non-negative safe integer, got ${String(version)}`);
+  }
+  db.pragma(`user_version = ${version}`);
+}
+
 /** Forward-only migration runner gated by PRAGMA user_version. */
 export function runMigrations(db: Db): void {
   const current = db.pragma("user_version", { simple: true }) as number;
@@ -18,11 +29,14 @@ export function runMigrations(db: Db): void {
 
   for (const file of files) {
     const version = parseInt(file.split("_")[0], 10);
+    if (Number.isNaN(version)) {
+      throw new Error(`migration file name has no numeric prefix: ${file}`);
+    }
     if (version <= current) continue;
     const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
     const apply = db.transaction(() => {
       db.exec(sql);
-      db.pragma(`user_version = ${version}`);
+      setUserVersion(db, version);
     });
     apply();
   }
