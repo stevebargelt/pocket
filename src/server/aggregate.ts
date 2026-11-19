@@ -2,14 +2,12 @@ import type { KeystrokeRecord, SessionKeyStat } from "../shared/types";
 import { EMA_ALPHA, LAYOUT_FINGERPRINT } from "../shared/constants";
 import { foldKeystrokes, type FoldStat } from "./ema";
 import type { Db } from "./db";
+import { STAT_TABLES, type StatKind } from "./sqlIdentifiers";
 
 // key_stats / bigram_stats are a DERIVED cache: the incremental write path keeps
 // them current, and rebuildAggregatesFromKeystrokes() can recompute them from
 // the keystroke log. Because both go through the same foldKeystrokes left-fold
 // over the same id-ordered stream, the two never drift.
-
-type StatTable = "key_stats" | "bigram_stats";
-type UnitCol = "key" | "bigram";
 
 /** Per-key aggregate for one session — the heat-map-evolution time point. */
 export function computeSessionKeyStats(keystrokes: KeystrokeRecord[]): SessionKeyStat[] {
@@ -29,10 +27,10 @@ export function computeSessionKeyStats(keystrokes: KeystrokeRecord[]): SessionKe
   }));
 }
 
-function loadFoldMap(db: Db, table: StatTable, unitCol: UnitCol, fp: string): Map<string, FoldStat> {
+function loadFoldMap(db: Db, kind: StatKind, fp: string): Map<string, FoldStat> {
   const rows = db
     .prepare(
-      `SELECT ${unitCol} AS unit, latency_ms_ema, error_rate_ema, samples FROM ${table} WHERE layout_fingerprint = ?`,
+      `SELECT ${STAT_TABLES[kind].unitCol} AS unit, latency_ms_ema, error_rate_ema, samples FROM ${STAT_TABLES[kind].table} WHERE layout_fingerprint = ?`,
     )
     .all(fp) as Array<{ unit: string; latency_ms_ema: number; error_rate_ema: number; samples: number }>;
   const map = new Map<string, FoldStat>();
@@ -44,16 +42,15 @@ function loadFoldMap(db: Db, table: StatTable, unitCol: UnitCol, fp: string): Ma
 
 function writeFoldMap(
   db: Db,
-  table: StatTable,
-  unitCol: UnitCol,
+  kind: StatKind,
   fp: string,
   map: Map<string, FoldStat>,
   now: number,
 ): void {
   const upsert = db.prepare(
-    `INSERT INTO ${table} (${unitCol}, layout_fingerprint, latency_ms_ema, error_rate_ema, samples, last_updated)
+    `INSERT INTO ${STAT_TABLES[kind].table} (${STAT_TABLES[kind].unitCol}, layout_fingerprint, latency_ms_ema, error_rate_ema, samples, last_updated)
      VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(${unitCol}, layout_fingerprint) DO UPDATE SET
+     ON CONFLICT(${STAT_TABLES[kind].unitCol}, layout_fingerprint) DO UPDATE SET
        latency_ms_ema = excluded.latency_ms_ema,
        error_rate_ema = excluded.error_rate_ema,
        samples = excluded.samples,
@@ -109,12 +106,12 @@ export function updateAggregatesIncremental(
   now: number = Date.now(),
 ): void {
   const seed = {
-    keys: loadFoldMap(db, "key_stats", "key", fp),
-    bigrams: loadFoldMap(db, "bigram_stats", "bigram", fp),
+    keys: loadFoldMap(db, "key", fp),
+    bigrams: loadFoldMap(db, "bigram", fp),
   };
   const folded = foldKeystrokes(keystrokes, EMA_ALPHA, seed);
-  writeFoldMap(db, "key_stats", "key", fp, folded.keys, now);
-  writeFoldMap(db, "bigram_stats", "bigram", fp, folded.bigrams, now);
+  writeFoldMap(db, "key", fp, folded.keys, now);
+  writeFoldMap(db, "bigram", fp, folded.bigrams, now);
 }
 
 /** Recompute the EMA cache from scratch from the full keystroke log. */
@@ -128,8 +125,8 @@ export function rebuildAggregatesFromKeystrokes(
   const rebuild = db.transaction(() => {
     db.prepare("DELETE FROM key_stats WHERE layout_fingerprint = ?").run(fp);
     db.prepare("DELETE FROM bigram_stats WHERE layout_fingerprint = ?").run(fp);
-    writeFoldMap(db, "key_stats", "key", fp, folded.keys, now);
-    writeFoldMap(db, "bigram_stats", "bigram", fp, folded.bigrams, now);
+    writeFoldMap(db, "key", fp, folded.keys, now);
+    writeFoldMap(db, "bigram", fp, folded.bigrams, now);
   });
   rebuild();
 }

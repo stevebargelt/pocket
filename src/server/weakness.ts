@@ -5,6 +5,7 @@ import {
   WEAKNESS_ERROR_WEIGHT,
 } from "../shared/constants";
 import type { Db } from "./db";
+import { STAT_TABLES, type StatKind } from "./sqlIdentifiers";
 
 // Weakness ranking. A unit's weakness is a composite of how slow it is relative
 // to the user's OWN average speed (so it adapts to the typist, not an absolute
@@ -39,19 +40,19 @@ export function rankWeakest(
   return ranked;
 }
 
-function loadStats(db: Db, table: "key_stats" | "bigram_stats", unitCol: "key" | "bigram", fp: string): StatRow[] {
+function loadStats(db: Db, kind: StatKind, fp: string): StatRow[] {
   return db
     .prepare(
-      `SELECT ${unitCol} AS unit, latency_ms_ema AS latencyMsEma, error_rate_ema AS errorRateEma, samples
-       FROM ${table} WHERE layout_fingerprint = ?`,
+      `SELECT ${STAT_TABLES[kind].unitCol} AS unit, latency_ms_ema AS latencyMsEma, error_rate_ema AS errorRateEma, samples
+       FROM ${STAT_TABLES[kind].table} WHERE layout_fingerprint = ?`,
     )
     .all(fp) as StatRow[];
 }
 
 export function rankWeakKeys(db: Db, fp: string): WeakUnit[] {
-  return rankWeakest(loadStats(db, "key_stats", "key", fp), MIN_KEY_SAMPLES);
+  return rankWeakest(loadStats(db, "key", fp), MIN_KEY_SAMPLES);
 }
 
 export function rankWeakBigrams(db: Db, fp: string): WeakUnit[] {
-  return rankWeakest(loadStats(db, "bigram_stats", "bigram", fp), MIN_BIGRAM_SAMPLES);
+  return rankWeakest(loadStats(db, "bigram", fp), MIN_BIGRAM_SAMPLES);
 }
