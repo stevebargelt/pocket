@@ -136,9 +136,22 @@ thumb-cluster drills. Two points on provenance:
   exported layout is ever committed to this repo. Pocket parses from a local
   path (`POCKET_KEYMAP_PATH`, else the most-recently-modified `*.keymap` under
   `keymaps/`); it never downloads, uploads, or bundles a MoErgo layout.
-- **No MoErgo code or assets are included.** The Glove 80 SVG in
-  `src/client/components/` is hand-rolled from the keyboard's documented physical
-  geometry; it is not a MoErgo asset.
+- **No MoErgo code or assets are included, with one exception: test
+  fixtures.** The Glove 80 SVG in `src/client/components/` is hand-rolled from
+  the keyboard's documented physical geometry; it is not a MoErgo asset.
+- **Exception — `test/fixtures/keymaps/`.** This directory contains MoErgo's
+  factory default Glove80 layout, as exported by the Glove80 Layout Editor
+  (`factory.keymap`), and a variant derived from it for the keymap tests
+  (`custom.keymap`: `layer_Lower` renamed to `layer_Symbols`, base-layer
+  `&kp Q` changed to `&kp DELETE`). Both are used only as test fixtures and are
+  licensed **MIT**; the original copyright and licence header is kept intact:
+
+  > Copyright (c) 2020 The ZMK Contributors
+  > Copyright (c) 2025 Innaworks Development Limited, trading as MoErgo
+  > SPDX-License-Identifier: MIT
+
+  These are the vendor's stock layout, not a user's keymap; a user's own keymap
+  is still never committed or redistributed.
 
 ## ZMK firmware
 
