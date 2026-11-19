@@ -55,6 +55,7 @@ test("e2e: start a session, type, save, and see it in history", async () => {
         targetSeconds: 60,
         targetChars: sample.length,
         keystrokes,
+        clientId: crypto.randomUUID(),
       }),
     });
     assert.equal(saveRes.status, 201);
@@ -108,6 +109,7 @@ test("e2e: every context round-trips text -> save -> history with the right tag"
           targetSeconds: 60,
           targetChars: sample.length,
           keystrokes,
+          clientId: crypto.randomUUID(),
         }),
       });
       assert.equal(saveRes.status, 201, `session saved for ${context}`);

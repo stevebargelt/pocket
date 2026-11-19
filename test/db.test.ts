@@ -27,9 +27,9 @@ function tables(db: ReturnType<typeof openDb>): string[] {
     .map((r) => (r as { name: string }).name);
 }
 
-test("fresh DB applies 001+002+003 and creates all expected tables", () => {
+test("fresh DB applies 001..004 and creates all expected tables", () => {
   const db = openDb(":memory:");
-  assert.equal(db.pragma("user_version", { simple: true }), 3);
+  assert.equal(db.pragma("user_version", { simple: true }), 4);
   const present = tables(db);
   for (const t of EXPECTED_TABLES) {
     assert.ok(present.includes(t), `missing table ${t}`);
@@ -73,8 +73,8 @@ test("re-opening a DB file is idempotent (migrations gated by user_version)", ()
   ).run("prompts", "hello world", "test", "MIT");
   db1.close();
 
-  const db2 = openDb(path); // must not re-run 001/002/003 (would error on CREATE TABLE)
-  assert.equal(db2.pragma("user_version", { simple: true }), 3);
+  const db2 = openDb(path); // must not re-run 001..004 (would error on CREATE TABLE)
+  assert.equal(db2.pragma("user_version", { simple: true }), 4);
   const count = db2.prepare("SELECT COUNT(*) AS n FROM corpus_items").get() as { n: number };
   assert.equal(count.n, 1, "data survives re-open; schema not recreated");
   db2.close();
@@ -93,7 +93,7 @@ function statColumns(db: ReturnType<typeof openDb>, table: string): string[] {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name);
 }
 
-test("003 renames speed_ema -> latency_ms_ema on both stat tables, bumps user_version to 3", () => {
+test("003 renames speed_ema -> latency_ms_ema on both stat tables (runner then continues to 004)", () => {
   const dir = mkdtempSync(join(tmpdir(), "pocket-db-"));
   const path = join(dir, "pocket.db");
 
@@ -108,9 +108,9 @@ test("003 renames speed_ema -> latency_ms_ema on both stat tables, bumps user_ve
   assert.equal(v2.pragma("user_version", { simple: true }), 2);
   v2.close();
 
-  // Re-open through the real runner: it applies only 003 (3 > current 2).
+  // Re-open through the real runner: it applies 003 and 004 (both > current 2).
   const db = openDb(path);
-  assert.equal(db.pragma("user_version", { simple: true }), 3);
+  assert.equal(db.pragma("user_version", { simple: true }), 4);
 
   for (const t of ["key_stats", "bigram_stats"]) {
     const cols = statColumns(db, t);
@@ -132,5 +132,63 @@ test("003 renames speed_ema -> latency_ms_ema on both stat tables, bumps user_ve
   assert.equal(b.latency_ms_ema, 200);
   assert.equal(b.samples, 20);
 
+  db.close();
+});
+
+/** Build a pre-004 (user_version 3) DB by applying 001..003 by hand. */
+function openV3Db(path: string): Database.Database {
+  const db = openV2Db(path);
+  db.exec(readFileSync(join(MIGRATIONS_DIR, "003_rename_speed_ema_to_latency_ms_ema.sql"), "utf8"));
+  db.pragma("user_version = 3");
+  return db;
+}
+
+const INSERT_SESSION_V3 = `INSERT INTO sessions
+  (started_at, ended_at, context, layout_fingerprint, mode, wpm, awpm, error_rate, target_words, target_seconds)
+  VALUES (?, ?, 'prompts', ?, 'random', 40, 38, 0.05, 10, 60)`;
+
+test("004 adds a nullable sessions.client_id; existing v3 sessions migrate with client_id NULL", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pocket-db-"));
+  const path = join(dir, "pocket.db");
+
+  const v3 = openV3Db(path);
+  v3.prepare(INSERT_SESSION_V3).run(0, 60_000, LAYOUT_FINGERPRINT);
+  v3.prepare(INSERT_SESSION_V3).run(100_000, 160_000, LAYOUT_FINGERPRINT);
+  assert.ok(!statColumns(v3 as ReturnType<typeof openDb>, "sessions").includes("client_id"));
+  v3.close();
+
+  const db = openDb(path);
+  assert.equal(db.pragma("user_version", { simple: true }), 4);
+  assert.ok(statColumns(db, "sessions").includes("client_id"), "sessions has client_id after 004");
+
+  const rows = db.prepare("SELECT id, client_id FROM sessions ORDER BY id").all() as Array<{
+    id: number;
+    client_id: string | null;
+  }>;
+  assert.equal(rows.length, 2, "existing sessions survive the migration");
+  for (const r of rows) assert.equal(r.client_id, null, `session ${r.id} keeps client_id NULL`);
+  db.close();
+});
+
+test("004 unique index: duplicate non-null client_id is rejected, multiple NULLs are allowed", () => {
+  const db = openDb(":memory:");
+  const insert = db.prepare(
+    `INSERT INTO sessions
+       (started_at, ended_at, context, layout_fingerprint, mode, wpm, awpm, error_rate, target_words, target_seconds, client_id)
+     VALUES (0, 60000, 'prompts', ?, 'random', 40, 38, 0.05, 10, 60, ?)`,
+  );
+
+  insert.run(LAYOUT_FINGERPRINT, null);
+  insert.run(LAYOUT_FINGERPRINT, null);
+
+  const id = "6f1c2b9e-3d4a-4e5f-8a7b-0c1d2e3f4a5b";
+  insert.run(LAYOUT_FINGERPRINT, id);
+  assert.throws(() => insert.run(LAYOUT_FINGERPRINT, id), /UNIQUE constraint failed: sessions\.client_id/);
+
+  const counts = db
+    .prepare("SELECT SUM(client_id IS NULL) AS nulls, SUM(client_id IS NOT NULL) AS ids FROM sessions")
+    .get() as { nulls: number; ids: number };
+  assert.equal(counts.nulls, 2, "two NULL client_id rows coexist");
+  assert.equal(counts.ids, 1, "the duplicate non-null client_id was not inserted");
   db.close();
 });

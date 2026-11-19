@@ -44,6 +44,7 @@ function payload(overrides: Partial<SessionPayload> = {}): SessionPayload {
     targetSeconds: 60,
     targetChars: 11,
     keystrokes,
+    clientId: crypto.randomUUID(),
     ...overrides,
   };
 }

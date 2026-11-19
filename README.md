@@ -170,6 +170,9 @@ applied forward-only via `PRAGMA user_version`.
 
 - `sessions` — one row per practice session (WPM, accurate WPM, error rate,
   `context`, …). The `context` column predates v1.1; v1.1 populates it per session.
+  `client_id` (migration 004) is a client-generated UUID, unique when set, that
+  makes `POST /api/session` idempotent: a replayed save returns the existing row
+  (200) instead of inserting a duplicate (201). Rows saved before 004 keep it NULL.
 - `keystrokes` — every keystroke (expected, actual, latency, correct). The
   source of truth; aggregates are rebuildable from it and never dropped.
 - `key_stats`, `bigram_stats` — the EMA cache used by the weakness engine and

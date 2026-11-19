@@ -73,6 +73,7 @@ export function ResultsScreen({
         targetSeconds,
         targetChars,
         keystrokes: result.keystrokes,
+        clientId: result.clientId,
       })
       .then((_row: SessionRow) => setSaveState("saved"))
       .catch(() => setSaveState("error"));
