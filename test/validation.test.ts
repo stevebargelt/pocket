@@ -38,6 +38,7 @@ function payload(overrides: Record<string, unknown> = {}): Record<string, unknow
     targetSeconds: 60,
     targetChars: 11,
     keystrokes: [{ ...VALID_KEYSTROKE }],
+    clientId: crypto.randomUUID(),
     ...overrides,
   };
 }

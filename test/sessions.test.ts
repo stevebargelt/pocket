@@ -68,3 +68,19 @@ test("getHistory for 50 sessions is fast and reads pre-aggregated tables only", 
   }
   db.close();
 });
+
+test("saveSession without a clientId still inserts; two such calls make two rows", () => {
+  const db = openDb(":memory:");
+  const p = bigPayload(20, 1_000);
+  assert.equal(p.clientId, undefined);
+  const a = saveSession(db, p);
+  const b = saveSession(db, p);
+  assert.notEqual(a.id, b.id, "no clientId means no dedupe");
+  const { n } = db.prepare("SELECT COUNT(*) AS n FROM sessions").get() as { n: number };
+  assert.equal(n, 2);
+  const nulls = db.prepare("SELECT COUNT(*) AS n FROM sessions WHERE client_id IS NULL").get() as {
+    n: number;
+  };
+  assert.equal(nulls.n, 2, "client_id stays NULL for internal callers");
+  db.close();
+});

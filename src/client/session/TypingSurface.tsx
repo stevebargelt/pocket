@@ -7,6 +7,8 @@ export interface SessionResult {
   keystrokes: KeystrokeRecord[];
   startedAt: number;
   endedAt: number;
+  /** Idempotency key for the save, generated once when the session ends. */
+  clientId: string;
 }
 
 export function TypingSurface({
@@ -37,6 +39,7 @@ export function TypingSurface({
       keystrokes: capture.records,
       startedAt: startedAtRef.current || Date.now(),
       endedAt: Date.now(),
+      clientId: crypto.randomUUID(),
     });
   }, [capture.records, onComplete]);
 

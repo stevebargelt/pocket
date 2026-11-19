@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Db } from "./db";
 import { generateText } from "./generator";
-import { getHistory, saveSession } from "./sessions";
+import { getHistory, upsertSession } from "./sessions";
 import { buildRecommendation } from "./recommender";
 import { rebuildAggregatesFromKeystrokes } from "./aggregate";
 import { getCorpus } from "./corpus";
@@ -47,6 +47,7 @@ const isNonNegativeInt = (n: unknown): n is number =>
   typeof n === "number" && Number.isInteger(n) && n >= 0;
 const isPositiveInt = (n: unknown): n is number =>
   typeof n === "number" && Number.isInteger(n) && n > 0;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Hand-rolled guard for the POST /session payload (house style — no zod for a
@@ -64,6 +65,11 @@ const isPositiveInt = (n: unknown): n is number =>
  */
 function validateSessionPayload(payload: SessionPayload): string | null {
   if (!payload || typeof payload !== "object") return "invalid session payload";
+
+  // Idempotency key: required on the wire so every client save is replay-safe.
+  if (typeof payload.clientId !== "string" || !UUID_RE.test(payload.clientId)) {
+    return "clientId must be a UUID string";
+  }
 
   // Session time fields (epoch ms). started_at:0 is a valid fixture, so the
   // floor is non-negative, not strictly positive.
@@ -138,7 +144,9 @@ export function createApiRouter(db: Db, keymap: KeymapPort = SENTINEL_PORT): Rou
     }
     // Stamp the session with the active layout fingerprint (sentinel when no
     // keymap is loaded) so every result is attributable to the exact layout.
-    res.status(201).json(saveSession(db, payload, keymap.getActiveFingerprint()));
+    // A replay of an already-saved clientId returns the existing row with 200.
+    const { session, created } = upsertSession(db, payload, keymap.getActiveFingerprint());
+    res.status(created ? 201 : 200).json(session);
   });
 
   router.get("/history", (_req, res) => {

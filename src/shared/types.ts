@@ -25,6 +25,12 @@ export interface SessionPayload {
   /** Length of the presented text the user typed against. */
   targetChars: number;
   keystrokes: KeystrokeRecord[];
+  /**
+   * Client-generated UUID identifying this finished session, so a retried or
+   * duplicated save is idempotent. Required on the wire (POST /api/session);
+   * optional here so internal callers and tests of saveSession stay valid.
+   */
+  clientId?: string;
 }
 
 /** Computed typing metrics for a session. */

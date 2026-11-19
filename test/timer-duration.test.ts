@@ -195,6 +195,7 @@ test("API: session with targetSeconds=180 (3-minute option) is accepted and stor
       targetSeconds: 180,
       targetChars: 10,
       keystrokes: [{ ...BASE_KEYSTROKE }],
+      clientId: crypto.randomUUID(),
     });
     assert.equal(res.status, 201, "targetSeconds=180 must be accepted with HTTP 201");
     const saved = (await res.json()) as SessionRow;
@@ -214,6 +215,7 @@ test("API: unlimited-mode session with targetSeconds=0 is accepted and stored", 
       targetSeconds: 0,
       targetChars: 10,
       keystrokes: [{ ...BASE_KEYSTROKE }],
+      clientId: crypto.randomUUID(),
     });
     assert.equal(res.status, 201, "targetSeconds=0 (unlimited) must be accepted with HTTP 201");
     const saved = (await res.json()) as SessionRow;
@@ -235,6 +237,7 @@ test("API: GET /history returns targetSeconds=0 intact (no coercion to null/1/un
       targetSeconds: 0,
       targetChars: 10,
       keystrokes: [{ ...BASE_KEYSTROKE }],
+      clientId: crypto.randomUUID(),
     });
     assert.equal(postRes.status, 201, "unlimited session must be accepted");
     const saved = (await postRes.json()) as SessionRow;
@@ -265,6 +268,7 @@ test("API: negative targetSeconds (-1) is rejected with 400", async () => {
       targetSeconds: -1,
       targetChars: 10,
       keystrokes: [{ ...BASE_KEYSTROKE }],
+      clientId: crypto.randomUUID(),
     });
     assert.equal(res.status, 400, "targetSeconds=-1 must be rejected with HTTP 400");
     const body = (await res.json()) as { error?: string };
