@@ -6,8 +6,9 @@ import { STAT_TABLES, type StatKind } from "./sqlIdentifiers";
 
 // key_stats / bigram_stats are a DERIVED cache: the incremental write path keeps
 // them current, and rebuildAggregatesFromKeystrokes() can recompute them from
-// the keystroke log. Because both go through the same foldKeystrokes left-fold
-// over the same id-ordered stream, the two never drift.
+// the keystroke log. Both are per layout fingerprint and go through the same
+// foldKeystrokes left-fold over that layout's id-ordered stream, so the two
+// never drift.
 
 /** Per-key aggregate for one session — the heat-map-evolution time point. */
 export function computeSessionKeyStats(keystrokes: KeystrokeRecord[]): SessionKeyStat[] {
@@ -62,17 +63,22 @@ function writeFoldMap(
 }
 
 /**
- * Stream the whole keystroke log in id order, one record at a time. Uses
- * `.iterate()` so only the current row is materialised. While the returned
- * generator is open, better-sqlite3 forbids any other statement on this
- * connection, so callers must consume it fully before writing.
+ * Stream one layout's keystrokes (joined to `sessions.layout_fingerprint`) in
+ * id order, one record at a time. Id order is save order, which is the order
+ * the incremental write path folded them in. Uses `.iterate()` so only the
+ * current row is materialised. While the returned generator is open,
+ * better-sqlite3 forbids any other statement on this connection, so callers
+ * must consume it fully before writing.
  */
-export function* readOrderedKeystrokes(db: Db): Generator<KeystrokeRecord> {
+export function* readOrderedKeystrokes(db: Db, fp: string): Generator<KeystrokeRecord> {
   const rows = db
     .prepare(
-      "SELECT idx, expected_key, actual_key, latency_ms, correct FROM keystrokes ORDER BY id",
+      `SELECT k.idx, k.expected_key, k.actual_key, k.latency_ms, k.correct
+       FROM keystrokes k JOIN sessions s ON s.id = k.session_id
+       WHERE s.layout_fingerprint = ?
+       ORDER BY k.id`,
     )
-    .iterate() as IterableIterator<{
+    .iterate(fp) as IterableIterator<{
     idx: number;
     expected_key: string;
     actual_key: string;
@@ -123,23 +129,31 @@ export function updateAggregatesIncremental(
 }
 
 /**
- * Recompute the EMA cache from scratch from the full keystroke log.
+ * Recompute the EMA cache from scratch from the keystroke log, per layout.
+ *
+ * Each layout fingerprint that has sessions is folded from only its own
+ * keystrokes, exactly as the incremental write path does, so rebuild and
+ * incremental agree per layout. Every existing key_stats / bigram_stats row is
+ * dropped first, so a layout with no remaining keystrokes ends with no stats.
  *
  * Runs in one transaction so the read and the write see one consistent
- * snapshot. The keystroke stream is folded to completion before any DELETE:
+ * snapshot. Every keystroke stream is folded to completion before any DELETE:
  * better-sqlite3 throws if another statement runs while an iterator is open.
  */
-export function rebuildAggregatesFromKeystrokes(
-  db: Db,
-  fp: string = LAYOUT_FINGERPRINT,
-  now: number = Date.now(),
-): void {
+export function rebuildAggregatesFromKeystrokes(db: Db, now: number = Date.now()): void {
   const rebuild = db.transaction(() => {
-    const folded = foldKeystrokes(readOrderedKeystrokes(db), EMA_ALPHA);
-    db.prepare("DELETE FROM key_stats WHERE layout_fingerprint = ?").run(fp);
-    db.prepare("DELETE FROM bigram_stats WHERE layout_fingerprint = ?").run(fp);
-    writeFoldMap(db, "key", fp, folded.keys, now);
-    writeFoldMap(db, "bigram", fp, folded.bigrams, now);
+    const fps = (
+      db
+        .prepare("SELECT DISTINCT layout_fingerprint AS fp FROM sessions ORDER BY layout_fingerprint")
+        .all() as Array<{ fp: string }>
+    ).map((r) => r.fp);
+    const folded = new Map(fps.map((fp) => [fp, foldKeystrokes(readOrderedKeystrokes(db, fp), EMA_ALPHA)]));
+    db.prepare("DELETE FROM key_stats").run();
+    db.prepare("DELETE FROM bigram_stats").run();
+    for (const [fp, f] of folded) {
+      writeFoldMap(db, "key", fp, f.keys, now);
+      writeFoldMap(db, "bigram", fp, f.bigrams, now);
+    }
   });
   rebuild();
 }

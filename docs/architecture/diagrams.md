@@ -135,7 +135,7 @@ flowchart TB
 
 ## Session save and stats
 
-When a run ends, `TypingSurface` stamps the result with a fresh `clientId` and `ResultsScreen` posts it once; `upsertSession` writes the session, its keystrokes, its per-key stats and the EMA fold in a single transaction, and a replay with the same `clientId` returns the stored row instead of inserting a second one. `POST /api/rebuild` recomputes the EMA cache from the full keystroke log, streamed with `.iterate()`; on `main` the route rebuilds only the default `v1-unknown-layout` fingerprint. Reads never replay keystrokes: history comes from `sessions` and `session_key_stats`, and the recommendation and targeted text come from the weakness ranking over `key_stats` and `bigram_stats`.
+When a run ends, `TypingSurface` stamps the result with a fresh `clientId` and `ResultsScreen` posts it once; `upsertSession` writes the session, its keystrokes, its per-key stats and the EMA fold in a single transaction, and a replay with the same `clientId` returns the stored row instead of inserting a second one. `POST /api/rebuild` recomputes the EMA cache from the keystroke log for every layout fingerprint that has sessions, folding each layout only from its own keystrokes (joined through `sessions.layout_fingerprint` and streamed with `.iterate()`), and drops `key_stats` and `bigram_stats` rows for layouts with no keystrokes left. Reads never replay keystrokes: history comes from `sessions` and `session_key_stats`, and the recommendation and targeted text come from the weakness ranking over `key_stats` and `bigram_stats`.
 
 ```mermaid
 sequenceDiagram
@@ -178,10 +178,13 @@ sequenceDiagram
   opt POST /api/rebuild
     R->>A: rebuildAggregatesFromKeystrokes
     A->>DB: BEGIN transaction
-    A->>DB: readOrderedKeystrokes streams rows with .iterate()
-    A->>A: foldKeystrokes over the full log
-    A->>DB: DELETE key_stats and bigram_stats for the fingerprint
-    A->>DB: rewrite key_stats and bigram_stats
+    A->>DB: list layout fingerprints that have sessions
+    loop each fingerprint
+      A->>DB: readOrderedKeystrokes streams that layout's rows with .iterate()
+      A->>A: foldKeystrokes over that layout's log
+    end
+    A->>DB: DELETE all key_stats and bigram_stats rows
+    A->>DB: rewrite key_stats and bigram_stats per fingerprint
     A->>DB: COMMIT
     R-->>API: 200 ok true
   end

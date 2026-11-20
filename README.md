@@ -142,7 +142,10 @@ and history — so every trend is commensurable.
 - **EMA fold** (`src/server/ema.ts`): `ema' = α·sample + (1−α)·ema`, applied per
   sample in keystroke timestamp order. `EMA_ALPHA = 0.2`. Recency-weighted by
   construction; the same pure fold powers both the incremental write path and a
-  full rebuild from the keystroke log — so the derived stats never drift.
+  full rebuild from the keystroke log — so the derived stats never drift. Both
+  are per layout fingerprint: `POST /api/rebuild` folds each layout's stats from
+  only that layout's keystrokes (via `sessions.layout_fingerprint`) and drops
+  stats for layouts with no keystrokes left.
 - **EMA warmup** (`WARMUP_SAMPLES = 3` in `src/shared/constants.ts`): a single
   early sample shouldn't masquerade as a stable EMA, so until a unit has
   accumulated `WARMUP_SAMPLES` samples its stat reports a simple running mean; at
