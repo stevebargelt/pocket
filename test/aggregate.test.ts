@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { AddressInfo } from "node:net";
+import { createApp } from "../src/server/app";
 import { openDb } from "../src/server/db";
 import { saveSession } from "../src/server/sessions";
 import {
@@ -58,7 +60,7 @@ test("rebuild == incrementally-maintained aggregates (no-drift invariant)", () =
   lines.forEach((line, i) => saveSession(db, payloadFromText(line, 1_000 + i * 100_000)));
 
   const incremental = snapshot(db);
-  rebuildAggregatesFromKeystrokes(db, LAYOUT_FINGERPRINT, Date.now());
+  rebuildAggregatesFromKeystrokes(db, Date.now());
   const rebuilt = snapshot(db);
 
   // The corpus above drives several keys (e.g. high-frequency letters) well past
@@ -100,15 +102,17 @@ test("computeSessionKeyStats: mean latency and error rate per key", () => {
   ]);
 });
 
+/** Sessions on the default layout plus one on a second layout. */
 function seedSessions(db: ReturnType<typeof openDb>): void {
   const lines = ["the quick brown fox", "jumps over the lazy dog", "hello there hello"];
   lines.forEach((line, i) => saveSession(db, payloadFromText(line, 2_000 + i * 100_000)));
+  saveSession(db, payloadFromText("other layout text", 500_000), "fp-other-layout");
 }
 
 test("rebuild streams keystrokes: never calls .all() on a keystrokes query", () => {
   const db = openDb(":memory:");
   seedSessions(db);
-  const before = snapshot(db);
+  const before = snapshotByLayout(db);
 
   const realPrepare = db.prepare.bind(db);
   let keystrokeStatements = 0;
@@ -123,26 +127,30 @@ test("rebuild streams keystrokes: never calls .all() on a keystrokes query", () 
     return stmt;
   }) as typeof db.prepare;
 
-  rebuildAggregatesFromKeystrokes(db, LAYOUT_FINGERPRINT, Date.now());
+  rebuildAggregatesFromKeystrokes(db, Date.now());
   (db as { prepare: typeof db.prepare }).prepare = realPrepare;
 
-  assert.ok(keystrokeStatements > 0, "rebuild must have read the keystrokes table");
-  assert.deepEqual(snapshot(db), before);
+  assert.equal(keystrokeStatements, 2, "rebuild must stream the keystrokes of each of the two layouts");
+  assert.deepEqual(snapshotByLayout(db), before);
   db.close();
 });
 
-test("readOrderedKeystrokes returns a lazy iterable matching the full id-ordered read", () => {
+test("readOrderedKeystrokes returns a lazy iterable of one layout's keystrokes in id order", () => {
   const db = openDb(":memory:");
   seedSessions(db);
 
-  const result = readOrderedKeystrokes(db);
+  const result = readOrderedKeystrokes(db, LAYOUT_FINGERPRINT);
   assert.equal(Array.isArray(result), false);
   assert.equal(typeof result[Symbol.iterator], "function");
 
   const expected = (
     db
-      .prepare("SELECT idx, expected_key, actual_key, latency_ms, correct FROM keystrokes ORDER BY id")
-      .all() as Array<{ idx: number; expected_key: string; actual_key: string; latency_ms: number; correct: number }>
+      .prepare(
+        `SELECT k.idx, k.expected_key, k.actual_key, k.latency_ms, k.correct
+         FROM keystrokes k JOIN sessions s ON s.id = k.session_id
+         WHERE s.layout_fingerprint = ? ORDER BY k.id`,
+      )
+      .all(LAYOUT_FINGERPRINT) as Array<{ idx: number; expected_key: string; actual_key: string; latency_ms: number; correct: number }>
   ).map((r) => ({
     index: r.idx,
     expectedChar: r.expected_key,
@@ -152,6 +160,94 @@ test("readOrderedKeystrokes returns a lazy iterable matching the full id-ordered
   }));
   const streamed = [...result];
   assert.ok(streamed.length > 0);
+  const total = (db.prepare("SELECT COUNT(*) AS n FROM keystrokes").get() as { n: number }).n;
+  assert.ok(streamed.length < total, "the other layout's keystrokes must be excluded");
   assert.deepEqual(streamed, expected);
+  db.close();
+});
+
+// --- PKT-13: rebuild is per layout ---------------------------------------
+
+const FP_A = "fp-layout-a";
+const FP_B = "fp-layout-b";
+
+/** key_stats + bigram_stats rows grouped by layout fingerprint. */
+function snapshotByLayout(db: ReturnType<typeof openDb>) {
+  const round = (n: number) => Math.round(n * 1e9) / 1e9;
+  const read = (table: "key_stats" | "bigram_stats", unit: "key" | "bigram") =>
+    (
+      db
+        .prepare(
+          `SELECT layout_fingerprint AS fp, ${unit} AS unit, latency_ms_ema, error_rate_ema, samples
+           FROM ${table} ORDER BY layout_fingerprint, ${unit}`,
+        )
+        .all() as Array<{ fp: string; unit: string; latency_ms_ema: number; error_rate_ema: number; samples: number }>
+    ).map((r) => ({ ...r, latency_ms_ema: round(r.latency_ms_ema), error_rate_ema: round(r.error_rate_ema) }));
+  return { keys: read("key_stats", "key"), bigrams: read("bigram_stats", "bigram") };
+}
+
+/** Interleave sessions on two layouts, with distinct latencies per layout. */
+function seedTwoLayouts(db: ReturnType<typeof openDb>): void {
+  const sessions: Array<[string, string]> = [
+    ["the quick brown fox", FP_A],
+    ["explain how a hash map works", FP_B],
+    ["write a function that reverses a string", FP_A],
+    ["the the the the", FP_B],
+    ["jumps over the lazy dog", FP_A],
+  ];
+  sessions.forEach(([line, fp], i) => {
+    const p = payloadFromText(line, 10_000 + i * 100_000);
+    if (fp === FP_B) p.keystrokes = p.keystrokes.map((k) => ({ ...k, latencyMs: k.latencyMs * 3 }));
+    saveSession(db, p, fp);
+  });
+}
+
+async function postRebuild(db: ReturnType<typeof openDb>): Promise<void> {
+  const app = createApp(db, { distDir: null });
+  const server = await new Promise<ReturnType<typeof app.listen>>((resolve) => {
+    const s = app.listen(0, () => resolve(s));
+  });
+  try {
+    const { port } = server.address() as AddressInfo;
+    const res = await fetch(`http://localhost:${port}/api/rebuild`, { method: "POST" });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true });
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+test("POST /api/rebuild: each layout's stats equal its incrementally maintained ones (no-drift per layout)", async () => {
+  const db = openDb(":memory:");
+  seedTwoLayouts(db);
+  const incremental = snapshotByLayout(db);
+  assert.deepEqual(
+    [...new Set(incremental.keys.map((r) => r.fp))],
+    [FP_A, FP_B],
+    "fixture must populate stats under both layouts",
+  );
+  assert.ok(
+    incremental.keys.some((k) => k.samples > WARMUP_SAMPLES),
+    "fixture must push at least one key past the warmup boundary",
+  );
+
+  await postRebuild(db);
+
+  assert.deepEqual(snapshotByLayout(db), incremental);
+  db.close();
+});
+
+test("POST /api/rebuild: removes stats rows for a layout with no remaining keystrokes", async () => {
+  const db = openDb(":memory:");
+  seedTwoLayouts(db);
+  const stale = saveSession(db, payloadFromText("zzz stale layout", 900_000), "fp-layout-gone");
+  db.prepare("DELETE FROM sessions WHERE id = ?").run(stale.id); // cascades to its keystrokes
+  const expected = snapshotByLayout(db);
+  expected.keys = expected.keys.filter((r) => r.fp !== "fp-layout-gone");
+  expected.bigrams = expected.bigrams.filter((r) => r.fp !== "fp-layout-gone");
+
+  await postRebuild(db);
+
+  assert.deepEqual(snapshotByLayout(db), expected);
   db.close();
 });

@@ -178,10 +178,13 @@ sequenceDiagram
   opt POST /api/rebuild
     R->>A: rebuildAggregatesFromKeystrokes
     A->>DB: BEGIN transaction
-    A->>DB: readOrderedKeystrokes streams rows with .iterate()
-    A->>A: foldKeystrokes over the full log
-    A->>DB: DELETE key_stats and bigram_stats for the fingerprint
-    A->>DB: rewrite key_stats and bigram_stats
+    A->>DB: list layout fingerprints that have sessions
+    loop each fingerprint
+      A->>DB: readOrderedKeystrokes streams that layout's rows with .iterate()
+      A->>A: foldKeystrokes over that layout's log
+    end
+    A->>DB: DELETE all key_stats and bigram_stats rows
+    A->>DB: rewrite key_stats and bigram_stats per fingerprint
     A->>DB: COMMIT
     R-->>API: 200 ok true
   end
