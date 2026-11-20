@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { HistoryEntry } from "../../shared/types";
+import type { HistoryEntry, ShortcutDrillRow } from "../../shared/types";
 import { CONTEXT_LABELS, type Context } from "../../shared/constants";
 import { summarizeByContext } from "../../shared/summary";
 import { api } from "../api";
@@ -7,6 +7,7 @@ import { HeatMap } from "../components/HeatMap";
 import type { Keymap } from "../../server/keymap/types";
 import { ContextSummary } from "./ContextSummary";
 import { TrendChart } from "./TrendChart";
+import { ShortcutTable, formatAccuracy, formatLatency } from "../drill/ShortcutResults";
 
 type Filter = Context | "all";
 
@@ -34,6 +35,73 @@ function FilterButton({
 }
 
 export function HistoryView({ keymap }: { keymap: Keymap | null }) {
+  return (
+    <div className="mx-auto max-w-4xl">
+      <h2 className="mb-4 text-lg text-ink-bright">History</h2>
+      <TypingHistory keymap={keymap} />
+      <ShortcutDrillHistory />
+    </div>
+  );
+}
+
+/**
+ * Past shortcut drills, newest first. Kept apart from the typing history: drills
+ * never enter the trend chart, heat map, filters or context summary.
+ */
+function ShortcutDrillHistory() {
+  const [drills, setDrills] = useState<ShortcutDrillRow[] | null>(null);
+  const [error, setError] = useState(false);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+
+  useEffect(() => {
+    api
+      .shortcutDrills()
+      .then((d) => setDrills([...d].reverse()))
+      .catch(() => setError(true));
+  }, []);
+
+  const selected = drills?.find((d) => d.id === selectedId) ?? null;
+
+  return (
+    <section className="mt-8 rounded-lg border border-ink-border bg-ink-surface p-4" aria-label="shortcut drills">
+      <h3 className="mb-3 text-sm text-ink-muted">shortcut drills</h3>
+      {error && <p className="text-sm text-err">Couldn't load shortcut drills — is the server running?</p>}
+      {!error && !drills && <p className="text-sm text-ink-muted">loading…</p>}
+      {drills && drills.length === 0 && (
+        <p className="text-sm text-ink-muted">No shortcut drills yet. Start one from the Practice view.</p>
+      )}
+      {drills && drills.length > 0 && (
+        <ul className="mb-4 space-y-1 text-sm">
+          {drills.map((d) => (
+            <li key={d.id}>
+              <button
+                onClick={() => setSelectedId(d.id === selectedId ? null : d.id)}
+                aria-pressed={d.id === selectedId}
+                className={`flex w-full gap-6 rounded px-2 py-1 text-left ${
+                  d.id === selectedId
+                    ? "border border-accent bg-ink-bg text-ink-bright"
+                    : "border border-transparent text-ink-text hover:border-ink-border"
+                }`}
+              >
+                <span className="w-48">{new Date(d.startedAt).toLocaleString()}</span>
+                <span>
+                  accuracy <span className="text-ink-bright">{formatAccuracy(d.summary.overall)}</span>
+                </span>
+                <span>
+                  mean correct latency{" "}
+                  <span className="text-ink-bright">{formatLatency(d.summary.overall)}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {selected && <ShortcutTable summary={selected.summary} />}
+    </section>
+  );
+}
+
+function TypingHistory({ keymap }: { keymap: Keymap | null }) {
   const [history, setHistory] = useState<HistoryEntry[] | null>(null);
   const [error, setError] = useState(false);
   const [idx, setIdx] = useState(0);
@@ -70,9 +138,7 @@ export function HistoryView({ keymap }: { keymap: Keymap | null }) {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <h2 className="mb-4 text-lg text-ink-bright">History</h2>
-
+    <div>
       <ContextSummary summaries={summaries} />
 
       <div className="mb-4 flex flex-wrap items-center gap-1.5 text-sm">

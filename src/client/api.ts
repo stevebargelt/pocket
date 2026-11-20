@@ -4,6 +4,8 @@ import type {
   Recommendation,
   SessionPayload,
   SessionRow,
+  ShortcutDrillPayload,
+  ShortcutDrillRow,
 } from "../shared/types";
 import type { Context } from "../shared/constants";
 import type { GeneratedText } from "../server/generator";
@@ -58,6 +60,17 @@ export const api = {
     });
     if (!res.ok) throw new Error(`POST /api/session failed: ${res.status}`);
     return res.json() as Promise<SessionRow>;
+  },
+  /** Every stored shortcut drill with its summary, oldest first. */
+  shortcutDrills: () => getJson<ShortcutDrillRow[]>("/api/shortcut-drills"),
+  async saveShortcutDrill(payload: ShortcutDrillPayload): Promise<ShortcutDrillRow> {
+    const res = await fetch("/api/shortcut-drills", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`POST /api/shortcut-drills failed: ${res.status}`);
+    return res.json() as Promise<ShortcutDrillRow>;
   },
 };
 

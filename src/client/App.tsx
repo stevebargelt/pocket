@@ -11,9 +11,12 @@ import { KeymapView } from "./components/KeymapView";
 import { TypingSurface, type SessionResult } from "./session/TypingSurface";
 import { ResultsScreen } from "./session/ResultsScreen";
 import { HistoryView } from "./history/HistoryView";
+import { ShortcutDrill, type ShortcutDrillResult } from "./drill/ShortcutDrill";
+import { ShortcutResults } from "./drill/ShortcutResults";
+import { buildDrillPrompts, type DrillChord } from "../shared/chords";
 
 type View = "practice" | "history" | "settings";
-type Phase = "idle" | "loading" | "typing" | "results";
+type Phase = "idle" | "loading" | "typing" | "results" | "shortcut" | "shortcutResults";
 
 const KEYMAP_SIG_KEY = "pocket.keymapSig";
 
@@ -65,6 +68,25 @@ function NavButton({
   );
 }
 
+function ShortcutDrillCard({ onStart }: { onStart: () => void }) {
+  return (
+    <div className="mx-auto flex max-w-2xl items-center justify-between rounded-lg border border-ink-border bg-ink-surface px-6 py-4">
+      <div>
+        <h2 className="text-ink-bright">Shortcut drill</h2>
+        <p className="text-sm text-ink-muted">
+          30 prompts of ⌘C ⌘V ⌘A ⌘X ⌘Z ⌘S ⌃C ⌃B ⌫ ⌦ — accuracy and speed per shortcut.
+        </p>
+      </div>
+      <button
+        onClick={onStart}
+        className="rounded border border-ink-border px-4 py-2 text-ink-text hover:bg-ink-bg"
+      >
+        start shortcut drill
+      </button>
+    </div>
+  );
+}
+
 function SettingsView({
   settings,
   onChange,
@@ -94,7 +116,12 @@ function SettingsView({
   );
 }
 
-export default function App() {
+export default function App({
+  buildShortcutPrompts = buildDrillPrompts,
+}: {
+  /** Prompt order for each shortcut drill; injectable so tests can fix it. */
+  buildShortcutPrompts?: () => DrillChord[];
+} = {}) {
   const [view, setViewState] = useState<View>(() => hashToView(window.location.hash));
   const [phase, setPhase] = useState<Phase>("idle");
 
@@ -124,6 +151,31 @@ export default function App() {
   const [fingerprintChanged, setFingerprintChanged] = useState(false);
   const [drillError, setDrillError] = useState<string | null>(null);
   const [restrictToLayer, setRestrictToLayer] = useState(false);
+
+  // PKT-12 shortcut drill. `shortcutRun` keys the drill so "again" remounts it fresh.
+  const [shortcutPrompts, setShortcutPrompts] = useState<DrillChord[]>([]);
+  const [shortcutRun, setShortcutRun] = useState(0);
+  const [shortcutResult, setShortcutResult] = useState<ShortcutDrillResult | null>(null);
+
+  const startShortcutDrill = useCallback(() => {
+    setShortcutPrompts(buildShortcutPrompts());
+    setShortcutRun((n) => n + 1);
+    setShortcutResult(null);
+    setPhase("shortcut");
+  }, [buildShortcutPrompts]);
+
+  const finishShortcutDrill = useCallback((r: ShortcutDrillResult) => {
+    setShortcutResult(r);
+    setPhase("shortcutResults");
+  }, []);
+
+  const abortShortcutDrill = useCallback(() => setPhase("idle"), []);
+
+  // Leaving Practice mid-drill abandons it: coming back shows the idle view, not a
+  // fresh drill with the same prompts.
+  useEffect(() => {
+    if (view !== "practice") setPhase((p) => (p === "shortcut" ? "idle" : p));
+  }, [view]);
 
   const startSession = useCallback(
     async (m: PracticeMode) => {
@@ -350,6 +402,8 @@ export default function App() {
                   ) : undefined}
                 />
 
+                <ShortcutDrillCard onStart={startShortcutDrill} />
+
                 {keymap ? (
                   <section className="flex flex-col items-center gap-4">
                     <LayerPicker
@@ -399,6 +453,22 @@ export default function App() {
                 targetChars={generated.text.length}
                 keymap={keymap}
                 onAgain={() => setPhase("idle")}
+                onViewHistory={() => setView("history")}
+              />
+            )}
+            {phase === "shortcut" && (
+              <ShortcutDrill
+                key={shortcutRun}
+                prompts={shortcutPrompts}
+                onFinish={finishShortcutDrill}
+                onAbort={abortShortcutDrill}
+              />
+            )}
+            {phase === "shortcutResults" && shortcutResult && (
+              <ShortcutResults
+                key={shortcutResult.clientId}
+                result={shortcutResult}
+                onAgain={startShortcutDrill}
                 onViewHistory={() => setView("history")}
               />
             )}
