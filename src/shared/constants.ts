@@ -92,3 +92,17 @@ export const SESSION_MAX_DURATION_MS = 2 * 60 * 60 * 1000;
 
 /** Hard ceiling on any one keystroke's inter-key latency. Anything larger is corrupt input. */
 export const MAX_KEYSTROKE_LATENCY_MS = 10000;
+
+// --- PKT-12: shortcut drills (consumed by shared/chords.ts and routes.ts) ---
+
+/** How many times each drilled chord is prompted in one shortcut drill. */
+export const SHORTCUT_DRILL_REPS = 3;
+
+/** Hard ceiling on one shortcut attempt's prompt-to-chord latency. Anything larger is corrupt input. */
+export const SHORTCUT_MAX_LATENCY_MS = 30_000;
+
+/** Hard ceiling on the number of attempts in one POSTed shortcut drill. */
+export const SHORTCUT_MAX_ATTEMPTS = 100;
+
+/** Longest chord id accepted on the write path (e.g. `ctrl+alt+shift+cmd+arrowright` is 29). */
+export const CHORD_MAX_LENGTH = 32;

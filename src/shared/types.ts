@@ -109,3 +109,56 @@ export interface Recommendation {
   /** Always true in v1 — labels the suggestion as a heuristic in the UI. */
   isHeuristic: true;
 }
+
+// --- PKT-12: shortcut drills ---
+
+/** One prompt in a shortcut drill as the client POSTs it. `correct` is computed server-side. */
+export interface ShortcutAttemptPayload {
+  /** Position of the prompt in the drill. */
+  index: number;
+  /** The prompted chord id (a DrillChord, e.g. `cmd+c`). */
+  expected: string;
+  /** The chord id the user actually pressed (any chordFromEvent output). */
+  actual: string;
+  /** ms from the prompt appearing to the chord being pressed. */
+  latencyMs: number;
+}
+
+/** What the client POSTs to /api/shortcut-drills when a drill finishes. */
+export interface ShortcutDrillPayload {
+  /** Client-generated UUID; a replay with the same id is idempotent. */
+  clientId: string;
+  startedAt: number;
+  endedAt: number;
+  attempts: ShortcutAttemptPayload[];
+}
+
+/** Accuracy and speed over a set of shortcut attempts. */
+export interface ShortcutStats {
+  attempts: number;
+  correct: number;
+  /** correct / attempts; 0 when there are no attempts. */
+  accuracy: number;
+  /** Mean latency of the CORRECT attempts only; null when none were correct. */
+  meanCorrectLatencyMs: number | null;
+}
+
+/** ShortcutStats for one drilled chord. */
+export interface ShortcutChordStats extends ShortcutStats {
+  chord: string;
+}
+
+/** Overall stats plus one entry per DRILL_CHORDS chord, in display order. */
+export interface ShortcutDrillSummary {
+  overall: ShortcutStats;
+  perChord: ShortcutChordStats[];
+}
+
+/** A stored shortcut drill with its summary, as returned by the API. */
+export interface ShortcutDrillRow {
+  id: number;
+  startedAt: number;
+  endedAt: number;
+  layoutFingerprint: string;
+  summary: ShortcutDrillSummary;
+}

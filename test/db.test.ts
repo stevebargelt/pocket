@@ -18,6 +18,8 @@ const EXPECTED_TABLES = [
   "session_key_stats",
   "corpus_items",
   "layouts",
+  "shortcut_drills",
+  "shortcut_attempts",
 ];
 
 function tables(db: ReturnType<typeof openDb>): string[] {
@@ -27,9 +29,9 @@ function tables(db: ReturnType<typeof openDb>): string[] {
     .map((r) => (r as { name: string }).name);
 }
 
-test("fresh DB applies 001..004 and creates all expected tables", () => {
+test("fresh DB applies 001..005 and creates all expected tables", () => {
   const db = openDb(":memory:");
-  assert.equal(db.pragma("user_version", { simple: true }), 4);
+  assert.equal(db.pragma("user_version", { simple: true }), 5);
   const present = tables(db);
   for (const t of EXPECTED_TABLES) {
     assert.ok(present.includes(t), `missing table ${t}`);
@@ -73,8 +75,8 @@ test("re-opening a DB file is idempotent (migrations gated by user_version)", ()
   ).run("prompts", "hello world", "test", "MIT");
   db1.close();
 
-  const db2 = openDb(path); // must not re-run 001..004 (would error on CREATE TABLE)
-  assert.equal(db2.pragma("user_version", { simple: true }), 4);
+  const db2 = openDb(path); // must not re-run 001..005 (would error on CREATE TABLE)
+  assert.equal(db2.pragma("user_version", { simple: true }), 5);
   const count = db2.prepare("SELECT COUNT(*) AS n FROM corpus_items").get() as { n: number };
   assert.equal(count.n, 1, "data survives re-open; schema not recreated");
   db2.close();
@@ -93,7 +95,7 @@ function statColumns(db: ReturnType<typeof openDb>, table: string): string[] {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name);
 }
 
-test("003 renames speed_ema -> latency_ms_ema on both stat tables (runner then continues to 004)", () => {
+test("003 renames speed_ema -> latency_ms_ema on both stat tables (runner then continues to 005)", () => {
   const dir = mkdtempSync(join(tmpdir(), "pocket-db-"));
   const path = join(dir, "pocket.db");
 
@@ -108,9 +110,9 @@ test("003 renames speed_ema -> latency_ms_ema on both stat tables (runner then c
   assert.equal(v2.pragma("user_version", { simple: true }), 2);
   v2.close();
 
-  // Re-open through the real runner: it applies 003 and 004 (both > current 2).
+  // Re-open through the real runner: it applies 003..005 (all > current 2).
   const db = openDb(path);
-  assert.equal(db.pragma("user_version", { simple: true }), 4);
+  assert.equal(db.pragma("user_version", { simple: true }), 5);
 
   for (const t of ["key_stats", "bigram_stats"]) {
     const cols = statColumns(db, t);
@@ -158,7 +160,7 @@ test("004 adds a nullable sessions.client_id; existing v3 sessions migrate with 
   v3.close();
 
   const db = openDb(path);
-  assert.equal(db.pragma("user_version", { simple: true }), 4);
+  assert.equal(db.pragma("user_version", { simple: true }), 5);
   assert.ok(statColumns(db, "sessions").includes("client_id"), "sessions has client_id after 004");
 
   const rows = db.prepare("SELECT id, client_id FROM sessions ORDER BY id").all() as Array<{
@@ -190,5 +192,66 @@ test("004 unique index: duplicate non-null client_id is rejected, multiple NULLs
     .get() as { nulls: number; ids: number };
   assert.equal(counts.nulls, 2, "two NULL client_id rows coexist");
   assert.equal(counts.ids, 1, "the duplicate non-null client_id was not inserted");
+  db.close();
+});
+
+/** Build a pre-005 (user_version 4) DB by applying 001..004 by hand. */
+function openV4Db(path: string): Database.Database {
+  const db = openV3Db(path);
+  db.exec(readFileSync(join(MIGRATIONS_DIR, "004_session_client_id.sql"), "utf8"));
+  db.pragma("user_version = 4");
+  return db;
+}
+
+test("005 is additive: adds shortcut_drills/shortcut_attempts and leaves every v4 typing row unchanged", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pocket-db-"));
+  const path = join(dir, "pocket.db");
+
+  const v4 = openV4Db(path);
+  const insertSession = v4.prepare(
+    `INSERT INTO sessions
+       (started_at, ended_at, context, layout_fingerprint, mode, wpm, awpm, error_rate, target_words, target_seconds, client_id)
+     VALUES (?, ?, 'prompts', ?, 'random', 40, 38, 0.05, 10, 60, ?)`,
+  );
+  const insertKeystroke = v4.prepare(
+    `INSERT INTO keystrokes (session_id, idx, ts_ms, expected_key, actual_key, latency_ms, correct)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const s1 = Number(insertSession.run(0, 60_000, LAYOUT_FINGERPRINT, null).lastInsertRowid);
+  const s2 = Number(
+    insertSession.run(100_000, 160_000, "fp-other", "6f1c2b9e-3d4a-4e5f-8a7b-0c1d2e3f4a5b").lastInsertRowid,
+  );
+  insertKeystroke.run(s1, 0, 100, "a", "a", 100, 1);
+  insertKeystroke.run(s1, 1, 220, "b", "x", 120, 0);
+  insertKeystroke.run(s2, 0, 90, "c", "c", 90, 1);
+  v4.prepare(
+    "INSERT INTO key_stats (key, layout_fingerprint, latency_ms_ema, error_rate_ema, samples, last_updated) VALUES (?,?,?,?,?,?)",
+  ).run("a", LAYOUT_FINGERPRINT, 100, 0, 1, 0);
+  v4.prepare(
+    "INSERT INTO bigram_stats (bigram, layout_fingerprint, latency_ms_ema, error_rate_ema, samples, last_updated) VALUES (?,?,?,?,?,?)",
+  ).run("ab", LAYOUT_FINGERPRINT, 120, 1, 1, 0);
+
+  const dump = (db: Database.Database) =>
+    Object.fromEntries(
+      ["sessions", "keystrokes", "key_stats", "bigram_stats"].map((t) => [
+        t,
+        db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(),
+      ]),
+    );
+  const before = dump(v4);
+  assert.equal(v4.pragma("user_version", { simple: true }), 4);
+  assert.ok(!tables(v4 as ReturnType<typeof openDb>).includes("shortcut_drills"));
+  v4.close();
+
+  const db = openDb(path);
+  assert.equal(db.pragma("user_version", { simple: true }), 5);
+  const present = tables(db);
+  assert.ok(present.includes("shortcut_drills"), "shortcut_drills created by 005");
+  assert.ok(present.includes("shortcut_attempts"), "shortcut_attempts created by 005");
+  assert.deepEqual(
+    statColumns(db, "shortcut_attempts"),
+    ["id", "drill_id", "idx", "expected_chord", "actual_chord", "latency_ms", "correct"],
+  );
+  assert.deepEqual(dump(db), before, "every pre-existing typing row is unchanged");
   db.close();
 });
