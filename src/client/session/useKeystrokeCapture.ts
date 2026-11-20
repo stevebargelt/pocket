@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeystrokeRecord } from "../../shared/types";
+import { chordFromEvent, isDrillChord } from "../../shared/chords";
 import { KeystrokeBuffer, type CharStatus } from "./keystrokeBuffer";
 
 export interface Capture {
@@ -66,4 +67,43 @@ export function useKeystrokeCapture(
   };
 
   return { capture, reset: rebuild };
+}
+
+/**
+ * Shortcut-drill sibling of useKeystrokeCapture: the same window keydown
+ * listener pattern, but for chords (modifiers + key) instead of typed text.
+ * Like the hook above, the keydown path is in-memory only — never fetch.
+ *
+ * While `active`, every keydown with a chord (chordFromEvent not null) is
+ * handled here:
+ * - a drilled chord (isDrillChord) always has its default prevented, including
+ *   auto-repeats and keydowns the caller ignores (e.g. during feedback), so ⌘S
+ *   can't open a save dialog mid-drill;
+ * - non-repeat keydowns go to `onChord`; when it returns true (the keydown was
+ *   recorded as an attempt) the default is prevented too.
+ *
+ * When `active` is false no listener is attached, so nothing outside a drill is
+ * touched.
+ */
+export function useChordCapture(
+  active: boolean,
+  onChord: (chord: string, e: KeyboardEvent) => boolean,
+): void {
+  // A ref, so the listener is attached once per activation and always calls
+  // the latest callback without re-subscribing on every render.
+  const onChordRef = useRef(onChord);
+  onChordRef.current = onChord;
+
+  useEffect(() => {
+    if (!active) return;
+    const handler = (e: KeyboardEvent) => {
+      const chord = chordFromEvent(e);
+      if (chord === null) return;
+      if (isDrillChord(chord)) e.preventDefault();
+      if (e.repeat) return;
+      if (onChordRef.current(chord, e)) e.preventDefault();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [active]);
 }
