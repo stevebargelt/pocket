@@ -8,17 +8,22 @@ import { getCorpus } from "./corpus";
 import { rankWeakBigrams } from "./weakness";
 import { generateLayerDrill } from "./drills/layerDrills";
 import { generateThumbDrill } from "./drills/thumbDrills";
+import { listShortcutDrills, upsertShortcutDrill } from "./shortcutDrills";
 import type { Keymap } from "./keymap/types";
 import {
+  CHORD_MAX_LENGTH,
   CONTEXTS,
   DEFAULT_CONTEXT,
   LAYOUT_FINGERPRINT,
   MAX_KEYSTROKE_LATENCY_MS,
   SESSION_MAX_DURATION_MS,
+  SHORTCUT_MAX_ATTEMPTS,
+  SHORTCUT_MAX_LATENCY_MS,
   TOP_N_WEAK,
   type Context,
 } from "../shared/constants";
-import type { PracticeMode, SessionPayload } from "../shared/types";
+import { isDrillChord } from "../shared/chords";
+import type { PracticeMode, SessionPayload, ShortcutDrillPayload } from "../shared/types";
 
 /**
  * The router's read-only view of the active ZMK keymap. Injected (not imported
@@ -120,6 +125,55 @@ function validateSessionPayload(payload: SessionPayload): string | null {
   return null;
 }
 
+/**
+ * Hand-rolled guard for the POST /shortcut-drills payload, in the same style as
+ * validateSessionPayload: returns the FIRST offending field, or null. Rejects,
+ * never coerces. `expected` must be a drilled chord (so ⌘W and friends can never
+ * be stored as prompts); `actual` may be any chord the user pressed, bounded in
+ * length. A client-sent `correct` is ignored: the server computes it.
+ */
+function validateShortcutDrillPayload(payload: ShortcutDrillPayload): string | null {
+  if (!payload || typeof payload !== "object") return "invalid shortcut drill payload";
+
+  if (typeof payload.clientId !== "string" || !UUID_RE.test(payload.clientId)) {
+    return "clientId must be a UUID string";
+  }
+
+  if (!isNonNegativeInt(payload.startedAt)) return "startedAt must be a non-negative integer";
+  if (!isNonNegativeInt(payload.endedAt)) return "endedAt must be a non-negative integer";
+  if (payload.endedAt < payload.startedAt) return "endedAt must be >= startedAt";
+  if (payload.endedAt - payload.startedAt > SESSION_MAX_DURATION_MS) {
+    return `drill duration must be <= ${SESSION_MAX_DURATION_MS}ms (startedAt..endedAt)`;
+  }
+
+  if (
+    !Array.isArray(payload.attempts) ||
+    payload.attempts.length < 1 ||
+    payload.attempts.length > SHORTCUT_MAX_ATTEMPTS
+  ) {
+    return `attempts must be an array of 1..${SHORTCUT_MAX_ATTEMPTS} attempts`;
+  }
+  for (let i = 0; i < payload.attempts.length; i++) {
+    const a = payload.attempts[i];
+    if (!a || typeof a !== "object") return `attempts[${i}] must be an object`;
+    if (!isNonNegativeInt(a.index)) return `attempts[${i}].index must be a non-negative integer`;
+    if (!isDrillChord(a.expected)) return `attempts[${i}].expected must be a drilled chord`;
+    if (typeof a.actual !== "string" || a.actual.length < 1 || a.actual.length > CHORD_MAX_LENGTH) {
+      return `attempts[${i}].actual must be a non-empty string of length <= ${CHORD_MAX_LENGTH}`;
+    }
+    if (
+      typeof a.latencyMs !== "number" ||
+      !Number.isFinite(a.latencyMs) ||
+      a.latencyMs < 0 ||
+      a.latencyMs > SHORTCUT_MAX_LATENCY_MS
+    ) {
+      return `attempts[${i}].latencyMs must be a number in [0, ${SHORTCUT_MAX_LATENCY_MS}]`;
+    }
+  }
+
+  return null;
+}
+
 export function createApiRouter(db: Db, keymap: KeymapPort = SENTINEL_PORT): Router {
   const router = Router();
 
@@ -160,6 +214,25 @@ export function createApiRouter(db: Db, keymap: KeymapPort = SENTINEL_PORT): Rou
   router.post("/rebuild", (_req, res) => {
     rebuildAggregatesFromKeystrokes(db);
     res.json({ ok: true });
+  });
+
+  // --- PKT-12: shortcut drills (own tables; never sessions/keystrokes) ---
+
+  router.post("/shortcut-drills", (req, res) => {
+    const payload = req.body as ShortcutDrillPayload;
+    const error = validateShortcutDrillPayload(payload);
+    if (error) {
+      res.status(400).json({ error });
+      return;
+    }
+    // Same contract as POST /session: stamped with the active layout, 201 on
+    // create, 200 when an already-saved clientId is replayed.
+    const { drill, created } = upsertShortcutDrill(db, payload, keymap.getActiveFingerprint());
+    res.status(created ? 201 : 200).json(drill);
+  });
+
+  router.get("/shortcut-drills", (_req, res) => {
+    res.json(listShortcutDrills(db));
   });
 
   // --- v1.2: keymap awareness ---

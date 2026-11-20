@@ -9,8 +9,10 @@ import {
   computeSessionKeyStats,
   readOrderedKeystrokes,
 } from "../src/server/aggregate";
+import type { KeymapPort } from "../src/server/routes";
+import { buildDrillPrompts } from "../src/shared/chords";
 import { LAYOUT_FINGERPRINT, WARMUP_SAMPLES } from "../src/shared/constants";
-import type { KeystrokeRecord, SessionPayload } from "../src/shared/types";
+import type { KeystrokeRecord, SessionPayload, ShortcutDrillRow } from "../src/shared/types";
 
 function payloadFromText(text: string, startedAt: number): SessionPayload {
   const keystrokes: KeystrokeRecord[] = Array.from(text).map((c, i) => ({
@@ -249,5 +251,92 @@ test("POST /api/rebuild: removes stats rows for a layout with no remaining keyst
   await postRebuild(db);
 
   assert.deepEqual(snapshotByLayout(db), expected);
+  db.close();
+});
+
+// --- PKT-12: shortcut drills never move typing stats ----------------------
+
+/** Run `fn` against a full app whose keymap port reports `fp` as the active layout. */
+async function withAppOnLayout(
+  db: ReturnType<typeof openDb>,
+  fp: string,
+  fn: (base: string) => Promise<void>,
+): Promise<void> {
+  const keymap: KeymapPort = { getActiveKeymap: () => null, getActiveFingerprint: () => fp };
+  const app = createApp(db, { distDir: null, keymap });
+  const server = await new Promise<ReturnType<typeof app.listen>>((resolve) => {
+    const s = app.listen(0, () => resolve(s));
+  });
+  try {
+    const { port } = server.address() as AddressInfo;
+    await fn(`http://localhost:${port}`);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+/** A full 30-prompt drill: every chord, a mix of hits and misses. */
+function drillPayload(startedAt: number) {
+  return {
+    clientId: crypto.randomUUID(),
+    startedAt,
+    endedAt: startedAt + 45_000,
+    attempts: buildDrillPrompts(() => 0.5).map((expected, index) => ({
+      index,
+      expected,
+      // Every third prompt is answered with a plain key that is also a typed
+      // character, so a leak into keystrokes/key_stats could not hide.
+      actual: index % 3 === 0 ? "a" : expected,
+      latencyMs: 500 + index * 13,
+    })),
+  };
+}
+
+test("shortcut drills never change typing stats, keystrokes or history; rebuild still matches per layout (no-drift)", async () => {
+  const db = openDb(":memory:");
+  seedTwoLayouts(db);
+  const snapshot = snapshotByLayout(db);
+  assert.deepEqual([...new Set(snapshot.keys.map((r) => r.fp))], [FP_A, FP_B]);
+  const keystrokeCount = () => (db.prepare("SELECT COUNT(*) AS n FROM keystrokes").get() as { n: number }).n;
+  const keystrokesBefore = keystrokeCount();
+
+  let historyBefore = 0;
+  for (const [i, fp] of [FP_A, FP_B].entries()) {
+    await withAppOnLayout(db, fp, async (base) => {
+      if (i === 0) {
+        historyBefore = ((await (await fetch(`${base}/api/history`)).json()) as unknown[]).length;
+      }
+      for (const startedAt of [2_000_000 + i * 100_000, 2_050_000 + i * 100_000]) {
+        const res = await fetch(`${base}/api/shortcut-drills`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(drillPayload(startedAt)),
+        });
+        assert.equal(res.status, 201);
+        assert.equal(((await res.json()) as ShortcutDrillRow).layoutFingerprint, fp);
+      }
+    });
+  }
+  assert.equal(historyBefore, 5, "fixture has five typing sessions");
+
+  await withAppOnLayout(db, FP_A, async (base) => {
+    const drills = (await (await fetch(`${base}/api/shortcut-drills`)).json()) as ShortcutDrillRow[];
+    assert.deepEqual(
+      drills.map((d) => d.layoutFingerprint),
+      [FP_A, FP_A, FP_B, FP_B],
+      "drills were recorded under both layouts",
+    );
+
+    assert.deepEqual(snapshotByLayout(db), snapshot, "key_stats/bigram_stats untouched by drills");
+    assert.equal(keystrokeCount(), keystrokesBefore, "no keystrokes written by drills");
+    const history = (await (await fetch(`${base}/api/history`)).json()) as unknown[];
+    assert.equal(history.length, historyBefore, "no sessions written by drills");
+
+    const rebuild = await fetch(`${base}/api/rebuild`, { method: "POST" });
+    assert.equal(rebuild.status, 200);
+  });
+
+  assert.deepEqual(snapshotByLayout(db), snapshot, "rebuild == incremental per layout after drills");
+  assert.equal(keystrokeCount(), keystrokesBefore);
   db.close();
 });
