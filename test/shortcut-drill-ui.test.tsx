@@ -17,6 +17,7 @@ import {
   type DrillChord,
 } from "../src/shared/chords";
 import type { ShortcutDrillPayload, ShortcutDrillRow } from "../src/shared/types";
+import { SHORTCUT_MAX_LATENCY_MS } from "../src/shared/constants";
 
 /** A fixed, valid prompt order (30 prompts, no immediate repeat). */
 const PROMPTS: DrillChord[] = buildDrillPrompts(() => 0);
@@ -159,6 +160,39 @@ test("UI path: start from Practice idle, answer 30 prompts, see results, save on
     assert.ok(Number.isInteger(a.latencyMs) && (a.latencyMs as number) >= 0);
     assert.ok(!("correct" in a), "no client-sent correct field");
   });
+});
+
+test("a prompt left on screen past the latency cap is recorded at the cap and the drill still saves", async (t) => {
+  // Answer as the server does: 400 for any attempt above the cap.
+  const answer = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+    if (body?.attempts?.some((a: { latencyMs: number }) => a.latencyMs > SHORTCUT_MAX_LATENCY_MS)) {
+      calls.push({ url: String(input), method: (init?.method ?? "GET").toUpperCase(), body });
+      return new Response(JSON.stringify({ error: "latencyMs out of range" }), { status: 400 });
+    }
+    return answer(input, init);
+  }) as typeof fetch;
+
+  let clock = 1_000;
+  t.mock.method(performance, "now", () => clock);
+
+  await renderApp();
+  startDrill();
+  const stalled = 4;
+  for (let i = 0; i < PROMPTS.length; i++) {
+    clock += i === stalled ? 45_000 : 500;
+    press(PROMPTS[i]);
+    endFeedback();
+  }
+  await flush();
+
+  const posts = calls.filter((c) => c.method === "POST" && c.url === "/api/shortcut-drills");
+  assert.equal(posts.length, 1);
+  const body = posts[0].body as ShortcutDrillPayload;
+  assert.equal(body.attempts[stalled].latencyMs, 30_000);
+  assert.equal(body.attempts[stalled + 1].latencyMs, 500);
+  assert.ok(screen.getByText("saved to history"));
 });
 
 test("keydowns during the feedback window are not attempts", async () => {

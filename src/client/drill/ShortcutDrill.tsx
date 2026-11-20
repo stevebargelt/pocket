@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ShortcutAttemptPayload } from "../../shared/types";
 import { chordLabel, type DrillChord } from "../../shared/chords";
+import { SHORTCUT_MAX_LATENCY_MS } from "../../shared/constants";
 import { useChordCapture } from "../session/useKeystrokeCapture";
 
 /** How long the ✓ / ✗ feedback shows after each attempt before the next prompt. */
@@ -77,7 +78,8 @@ export function ShortcutDrill({
         index: i,
         expected,
         actual: chord,
-        latencyMs: Math.round(performance.now() - shownAtRef.current),
+        // The server rejects latencies above the cap, so one stalled prompt must not lose the drill.
+        latencyMs: Math.min(SHORTCUT_MAX_LATENCY_MS, Math.round(performance.now() - shownAtRef.current)),
       });
       inFeedbackRef.current = true;
       setFeedback({ expected, actual: chord });
