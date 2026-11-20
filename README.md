@@ -9,6 +9,7 @@ This is **v1.2 (ZMK keymap awareness)**: practice across prompts, CLI, code,
 email, and Teams chat, with per-context history and a cross-context summary, plus
 a live Glove 80 keymap display and layer/thumb-cluster drills read from your
 actual ZMK keymap — on top of the v1 weakness engine and longitudinal history.
+Pocket also has a shortcut drill mode for the Mac shortcuts the browser can see.
 Everything runs locally; no accounts, no cloud, no telemetry.
 
 > Scope is PRD §5 through "v1.2 — ZMK keymap awareness" (the keymap reader,
@@ -45,12 +46,13 @@ In dev, the Vite server proxies `/api/*` to the Express server.
 | `npm run curate` | Regenerate the prompts seed from a local WildChat-1M dump (see CREDITS) |
 | `npm run curate:cli` | Regenerate the CLI seed from a local tldr-pages checkout (see PROVENANCE) |
 | `npm run curate:code` | Regenerate the code seeds from local OSS checkouts (see PROVENANCE) |
-| `npm test` | Run the unit + e2e test suite |
+| `npm test` | Run the unit, API, e2e and jsdom UI tests (`test/*.test.ts`, `test/*.test.tsx`) |
 | `npm run typecheck` | `tsc --noEmit` |
 
 ### Checks
 
-Node 24 (from `.nvmrc`). Run these before opening a pull request:
+Node 24 (from `.nvmrc`). The UI tests use jsdom 31, which needs Node ≥ 24.15 on
+the 24 line. Run these before opening a pull request:
 
 ```bash
 npm ci
@@ -126,6 +128,31 @@ in symbol-heavy contexts (CLI/code) where your global weak bigrams aren't presen
   the parsed keymap (bindings + layer names), so results are attributable to the
   exact layout and a mid-stream layout change never silently pollutes a comparison.
 
+## Shortcut drill mode
+
+A drill for the Mac shortcuts you use most, started from the **shortcut drill**
+card on the Practice landing.
+
+- **What it drills** — ten chords: ⌘C ⌘V ⌘A ⌘X ⌘Z ⌘S ⌃C ⌃B ⌫ ⌦. ⌘W ⌘T ⌘Q ⌘R ⌘N
+  are never drilled, because the browser takes them before the page sees them.
+- **Prompts** — 30 per drill: each chord 3 times, shuffled, never the same chord
+  twice in a row.
+- **Scoring** — the first non-modifier keydown for a prompt is its attempt, one
+  attempt per prompt. Only an exact chord match is right (⇧⌘C is a miss for ⌘C).
+  Speed is the mean latency of correct presses; one prompt's latency is capped at
+  30 s, so a prompt left on screen can't lose the drill.
+- **Feedback** — ✓ or ✗ for 400 ms after each attempt, then the next prompt.
+  Esc aborts the drill and saves nothing.
+- **Browser shortcuts** — while a drill runs, the page blocks the browser's action
+  for the drilled chords (so ⌘S doesn't open a save dialog). Outside a drill
+  Pocket changes no browser shortcut.
+- **Results** — a per-shortcut table (correct, accuracy, mean correct latency)
+  when the drill ends, and a **shortcut drills** section in History listing past
+  drills, each with the same table.
+- **Kept apart from typing** — drills are stored apart from typing data, in their
+  own tables, and never affect WPM, the heat map, the weakness engine or the
+  recommender.
+
 ## How the numbers work (the metric contract)
 
 Defined once in `src/shared/metrics.ts` and shared by the live UI, the save path,
@@ -190,10 +217,16 @@ applied forward-only via `PRAGMA user_version`.
   Stores the canonical layer/binding JSON used to render the live keymap display;
   re-exporting an identical layout upserts the same row rather than minting a new
   one.
+- `shortcut_drills` — one row per finished shortcut drill (migration 005), with
+  `client_id` NOT NULL UNIQUE so `POST /api/shortcut-drills` is idempotent, start
+  and end times, and `layout_fingerprint`.
+- `shortcut_attempts` — one row per prompt: expected chord, pressed chord,
+  server-computed `correct` and `latency_ms`. The raw source of truth for drills;
+  summaries are computed at read time, with no cache.
 
-Every row is stamped with a `layout_fingerprint`. With no keymap loaded this is
-the sentinel `LAYOUT_FINGERPRINT = "v1-unknown-layout"`; once v1.2's keymap
-reader has parsed a `.keymap`, the fingerprint is a SHA-256 over the canonical
+Every session, stats row and shortcut drill is stamped with a `layout_fingerprint`.
+With no keymap loaded this is the sentinel `LAYOUT_FINGERPRINT = "v1-unknown-layout"`;
+once v1.2's keymap reader has parsed a `.keymap`, the fingerprint is a SHA-256 over the canonical
 parsed bindings + layer names (`src/server/keymap/fingerprint.ts`), so every
 result is attributable to the exact layout that produced it and pre-keymap data
 stays cleanly segregated.
