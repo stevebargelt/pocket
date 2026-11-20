@@ -135,7 +135,7 @@ flowchart TB
 
 ## Session save and stats
 
-When a run ends, `TypingSurface` stamps the result with a fresh `clientId` and `ResultsScreen` posts it once; `upsertSession` writes the session, its keystrokes, its per-key stats and the EMA fold in a single transaction, and a replay with the same `clientId` returns the stored row instead of inserting a second one. `POST /api/rebuild` recomputes the EMA cache from the full keystroke log, streamed with `.iterate()`; on `main` the route rebuilds only the default `v1-unknown-layout` fingerprint. Reads never replay keystrokes: history comes from `sessions` and `session_key_stats`, and the recommendation and targeted text come from the weakness ranking over `key_stats` and `bigram_stats`.
+When a run ends, `TypingSurface` stamps the result with a fresh `clientId` and `ResultsScreen` posts it once; `upsertSession` writes the session, its keystrokes, its per-key stats and the EMA fold in a single transaction, and a replay with the same `clientId` returns the stored row instead of inserting a second one. `POST /api/rebuild` recomputes the EMA cache from the keystroke log for every layout fingerprint that has sessions, folding each layout only from its own keystrokes (joined through `sessions.layout_fingerprint` and streamed with `.iterate()`), and drops `key_stats` and `bigram_stats` rows for layouts with no keystrokes left. Reads never replay keystrokes: history comes from `sessions` and `session_key_stats`, and the recommendation and targeted text come from the weakness ranking over `key_stats` and `bigram_stats`.
 
 ```mermaid
 sequenceDiagram
