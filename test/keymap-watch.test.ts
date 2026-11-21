@@ -4,14 +4,30 @@ import { mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { KeymapHolder, newestKeymap } from "../src/server/keymap/holder";
+import { KeymapHolder, newestKeymap, type WatchDir } from "../src/server/keymap/holder";
+import type { Keymap } from "../src/server/keymap/types";
 import { LAYOUT_FINGERPRINT } from "../src/shared/constants";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const factorySrc = readFileSync(resolve(HERE, "fixtures/keymaps/factory.keymap"), "utf8");
 const customSrc = readFileSync(resolve(HERE, "fixtures/keymaps/custom.keymap"), "utf8");
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+/**
+ * A stand-in for fs.watch that the test fires by hand, so a "change" happens exactly
+ * when the test says and never arrives late from the OS.
+ */
+function manualWatcher() {
+  const state = { onChange: null as (() => void) | null, closed: false };
+  const watchDir: WatchDir = (_dir, onChange) => {
+    state.onChange = onChange;
+    return { close: () => void (state.closed = true) };
+  };
+  const change = () => {
+    assert.ok(state.onChange, "the holder attached a watcher");
+    state.onChange();
+  };
+  return { watchDir, change, state };
+}
 
 test("holder with no keymap returns null + the sentinel fingerprint", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "pocket-km-empty-"));
@@ -40,17 +56,23 @@ test("holder loads the newest *.keymap in its directory", (t) => {
   );
 });
 
-test("directory watcher debounces a rapid edit burst into a single reload", async (t) => {
+test("directory watcher debounces a rapid edit burst into a single reload", (t) => {
+  // Fake clock: the debounce timer only advances when the test ticks it.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const dir = mkdtempSync(join(tmpdir(), "pocket-km-watch-"));
-  writeFileSync(join(dir, "initial.keymap"), factorySrc);
+  const initial = join(dir, "initial.keymap");
+  writeFileSync(initial, factorySrc);
+  utimesSync(initial, new Date(1_000), new Date(1_000));
 
   let reloads = 0;
   let lastFingerprint = "";
   const debounceMs = 80;
+  const watcher = manualWatcher();
   const holder = new KeymapHolder({
     dir,
     watch: true,
     debounceMs,
+    watchDir: watcher.watchDir,
     onReload: (_km, fp) => {
       reloads++;
       lastFingerprint = fp;
@@ -58,27 +80,70 @@ test("directory watcher debounces a rapid edit burst into a single reload", asyn
   });
   t.after(() => holder.close());
 
-  // Mimic the editor's temp-write+rename burst: several back-to-back writes.
-  for (let i = 0; i < 5; i++) writeFileSync(join(dir, `export-${i}.keymap`), customSrc);
-  // ensure the last-written file is unambiguously newest
-  const winner = join(dir, "export-4.keymap");
-  const future = new Date(Date.now() + 5_000);
-  utimesSync(winner, future, future);
-
-  // Poll until the reload signal arrives (generous 2 s deadline tolerates CPU starvation
-  // under full-suite concurrency). Once it fires, wait an additional settle window to
-  // confirm no second reload is queued before asserting the final count.
-  const deadline = Date.now() + 2000;
-  while (reloads === 0 && Date.now() < deadline) {
-    await sleep(20);
+  // Mimic the editor's temp-write+rename burst: several writes, each one landing just
+  // inside the previous event's debounce window, so the timer keeps being pushed back.
+  for (let i = 0; i < 5; i++) {
+    const file = join(dir, `export-${i}.keymap`);
+    writeFileSync(file, customSrc);
+    utimesSync(file, new Date(2_000 + i * 1_000), new Date(2_000 + i * 1_000));
+    watcher.change();
+    t.mock.timers.tick(debounceMs - 1);
   }
-  await sleep(debounceMs * 5); // settle: confirm no second reload fires
+  assert.equal(reloads, 0, "no reload while the burst is still arriving");
 
-  assert.equal(reloads, 1, "the burst coalesced into exactly one reload");
+  t.mock.timers.tick(1); // the last event's debounce window closes
+  assert.equal(reloads, 1, "the burst coalesced into one reload");
+
+  t.mock.timers.tick(debounceMs * 10); // run any timer still queued
+  assert.equal(reloads, 1, "no second reload fires after the burst");
+
   assert.equal(holder.getActiveFingerprint(), lastFingerprint);
   assert.notEqual(holder.getActiveFingerprint(), LAYOUT_FINGERPRINT, "a real keymap is now active");
   assert.ok(
     holder.getActiveKeymap()!.layers.some((l) => l.name === "Symbols"),
     "reloaded to the newest (custom) export",
   );
+});
+
+test("close() stops the watcher and drops a pending reload", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const dir = mkdtempSync(join(tmpdir(), "pocket-km-close-"));
+  let reloads = 0;
+  const watcher = manualWatcher();
+  const holder = new KeymapHolder({
+    dir,
+    watch: true,
+    debounceMs: 80,
+    watchDir: watcher.watchDir,
+    onReload: () => reloads++,
+  });
+  t.after(() => holder.close());
+
+  writeFileSync(join(dir, "late.keymap"), customSrc);
+  watcher.change(); // a reload is now pending
+  holder.close();
+  assert.ok(watcher.state.closed, "the watcher was closed");
+
+  t.mock.timers.tick(80 * 10);
+  assert.equal(reloads, 0, "the pending reload was cancelled by close()");
+  assert.equal(holder.getActiveKeymap(), null, "the keymap that landed after close was not loaded");
+});
+
+test("the default fs.watch watcher reloads when a keymap lands in the directory", async (t) => {
+  // Real fs.watch, real timers: this proves the production wiring. It waits on the
+  // reload itself (no deadline, no polling), and asserts only what holds however the
+  // OS batches its change events — the debounce count is covered by the test above.
+  const dir = mkdtempSync(join(tmpdir(), "pocket-km-fswatch-"));
+  let resolveReload!: (km: Keymap | null) => void;
+  const reloaded = new Promise<Keymap | null>((r) => (resolveReload = r));
+  const holder = new KeymapHolder({ dir, watch: true, debounceMs: 10, onReload: resolveReload });
+  t.after(() => holder.close());
+  assert.equal(holder.getActiveKeymap(), null, "the directory starts empty");
+
+  writeFileSync(join(dir, "export.keymap"), customSrc);
+  const km = await reloaded;
+
+  assert.ok(km!.layers.some((l) => l.name === "Symbols"), "onReload got the new keymap");
+  assert.equal(holder.getActiveKeymap(), km);
+  assert.notEqual(holder.getActiveFingerprint(), LAYOUT_FINGERPRINT, "a real keymap is now active");
 });

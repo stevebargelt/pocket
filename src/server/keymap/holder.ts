@@ -27,6 +27,23 @@ export const DEFAULT_DEBOUNCE_MS = 200;
 /** Called after a reload with the new active keymap (null when none) and fingerprint. */
 export type OnReload = (keymap: Keymap | null, fingerprint: string) => void;
 
+/** A live directory watch; only `close()` is needed by the holder. */
+export interface DirWatcher {
+  close(): void;
+}
+
+/** Starts watching `dir`, calling `onChange` on every change event inside it. */
+export type WatchDir = (dir: string, onChange: () => void) => DirWatcher;
+
+/** The production watcher: fs.watch on the directory, with errors swallowed. */
+export const fsWatchDir: WatchDir = (dir, onChange) => {
+  const watcher: FSWatcher = fsWatch(dir, () => onChange());
+  watcher.on("error", () => {
+    /* watcher errors (e.g. dir removed) are non-fatal — keep the last good keymap */
+  });
+  return watcher;
+};
+
 export interface KeymapHolderOptions {
   /** Directory to scan + watch for *.keymap files. */
   dir?: string | null;
@@ -38,6 +55,8 @@ export interface KeymapHolderOptions {
   watch?: boolean;
   /** Invoked after every reload (not the initial load). */
   onReload?: OnReload;
+  /** How to watch `dir` (default fs.watch). Tests inject a watcher they can fire by hand. */
+  watchDir?: WatchDir;
 }
 
 /** The newest (by mtime) *.keymap file in `dir`, or null if the dir is missing/empty. */
@@ -79,10 +98,11 @@ export class KeymapHolder {
   private readonly pinnedFile: string | null;
   private readonly debounceMs: number;
   private readonly onReload?: OnReload;
+  private readonly watchDir: WatchDir;
 
   private keymap: Keymap | null = null;
   private fingerprint: string = LAYOUT_FINGERPRINT;
-  private watcher: FSWatcher | null = null;
+  private watcher: DirWatcher | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(opts: KeymapHolderOptions = {}) {
@@ -90,6 +110,7 @@ export class KeymapHolder {
     this.pinnedFile = opts.pinnedFile ?? null;
     this.debounceMs = opts.debounceMs ?? DEFAULT_DEBOUNCE_MS;
     this.onReload = opts.onReload;
+    this.watchDir = opts.watchDir ?? fsWatchDir;
 
     this.load(); // initial load — does NOT fire onReload
     if (opts.watch && this.dir) this.startWatch();
@@ -135,15 +156,12 @@ export class KeymapHolder {
 
   private startWatch(): void {
     if (!this.dir || !existsSync(this.dir)) return;
-    this.watcher = fsWatch(this.dir, () => {
+    this.watcher = this.watchDir(this.dir, () => {
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
       this.debounceTimer = setTimeout(() => {
         this.debounceTimer = null;
         this.reload();
       }, this.debounceMs);
-    });
-    this.watcher.on("error", () => {
-      /* watcher errors (e.g. dir removed) are non-fatal — keep the last good keymap */
     });
   }
 
