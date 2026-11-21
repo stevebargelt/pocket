@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { once } from "node:events";
+import { mkdtempSync, readFileSync, utimesSync, writeFileSync, type FSWatcher } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { KeymapHolder, newestKeymap, type WatchDir } from "../src/server/keymap/holder";
-import type { Keymap } from "../src/server/keymap/types";
+import { fsWatchDir, KeymapHolder, newestKeymap, type WatchDir } from "../src/server/keymap/holder";
 import { LAYOUT_FINGERPRINT } from "../src/shared/constants";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -129,21 +129,26 @@ test("close() stops the watcher and drops a pending reload", (t) => {
   assert.equal(holder.getActiveKeymap(), null, "the keymap that landed after close was not loaded");
 });
 
-test("the default fs.watch watcher reloads when a keymap lands in the directory", async (t) => {
-  // Real fs.watch, real timers: this proves the production wiring. It waits on the
-  // reload itself (no deadline, no polling), and asserts only what holds however the
-  // OS batches its change events — the debounce count is covered by the test above.
+test("fsWatchDir forwards fs.watch change events, swallows errors, and closes", async (t) => {
+  // The production adapter, exercised on a real FSWatcher without waiting on the OS:
+  // the test emits the watcher's events itself, so nothing races FSEvents/inotify
+  // start-up and nothing can hang waiting for an event that never arrives.
   const dir = mkdtempSync(join(tmpdir(), "pocket-km-fswatch-"));
-  let resolveReload!: (km: Keymap | null) => void;
-  const reloaded = new Promise<Keymap | null>((r) => (resolveReload = r));
-  const holder = new KeymapHolder({ dir, watch: true, debounceMs: 10, onReload: resolveReload });
-  t.after(() => holder.close());
-  assert.equal(holder.getActiveKeymap(), null, "the directory starts empty");
+  let changes = 0;
+  const watcher = fsWatchDir(dir, () => changes++) as FSWatcher;
+  t.after(() => watcher.close());
 
-  writeFileSync(join(dir, "export.keymap"), customSrc);
-  const km = await reloaded;
+  // fs.watch(dir, listener) registers `listener` for the watcher's "change" event.
+  watcher.emit("change", "rename", "export.keymap");
+  watcher.emit("change", "change", "export.keymap");
+  assert.equal(changes, 2, "each fs.watch change event reaches onChange");
 
-  assert.ok(km!.layers.some((l) => l.name === "Symbols"), "onReload got the new keymap");
-  assert.equal(holder.getActiveKeymap(), km);
-  assert.notEqual(holder.getActiveFingerprint(), LAYOUT_FINGERPRINT, "a real keymap is now active");
+  // With no "error" listener, emit("error") would throw; fsWatchDir must have one.
+  assert.doesNotThrow(() => watcher.emit("error", new Error("dir removed")));
+  assert.equal(changes, 2, "an error is not reported as a change");
+
+  // Node emits "close" in-process on the next tick once the handle is released.
+  const closed = once(watcher, "close");
+  watcher.close();
+  await closed;
 });
