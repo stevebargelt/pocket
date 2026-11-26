@@ -1,0 +1,63 @@
+name: Agent
+
+# Adding the ready-for-agent label to an issue starts Claude Code on it. The run
+# ends in a pull request for the owner to merge, or, if the issue is blocked or
+# the agent can't finish it, in a comment and the ready-for-human label.
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+# One run per issue; labelling it again while a run is going does not start a second.
+concurrency:
+  group: agent-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    if: github.event.label.name == 'ready-for-agent'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          label_trigger: ready-for-agent
+          plugin_marketplaces: https://github.com/anthropics/claude-plugins-official.git
+          plugins: mattpocock-skills@claude-plugins-official
+          claude_args: |
+            --permission-mode acceptEdits
+            --allowedTools "Read,Edit,Write,Glob,Grep,Task,Skill,TodoWrite,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git:*),Bash(gh:*)"
+          prompt: |
+            You are working on issue #${{ github.event.issue.number }} in ${{ github.repository }}, with no one watching.
+            Read AGENTS.md first and follow it.
+
+            1. Run `gh issue view ${{ github.event.issue.number }}`. If it lists an open blocked-by issue,
+               stop: comment saying which issue blocks it, and do nothing else.
+            2. Implement what "What done looks like" asks, test-first where the issue has behaviour to test.
+               `npm run typecheck`, `npm test` and `npm run build` must pass.
+            3. Commit on your branch with a Conventional Commits message that ends with `(#${{ github.event.issue.number }})`.
+            4. Review your change with the code-review skill against `origin/main`, using this issue as the spec.
+               Fix every real finding, then re-run the three checks. Repeat at most twice.
+            5. Push, then `gh pr create --base main --fill-first` with a body that starts with
+               `Closes #${{ github.event.issue.number }}` and lists anything you left undone and why.
+
+            If you cannot get the checks green or the review clean, do not open a pull request. Instead comment
+            on the issue with what you tried and where it stuck, and run
+            `gh issue edit ${{ github.event.issue.number }} --remove-label ready-for-agent --add-label ready-for-human`.
