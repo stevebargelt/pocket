@@ -9,9 +9,13 @@ const NO_DATA = "#222932";
 const NO_DATA_LABEL = "#8a95a5"; // 4.8:1 on NO_DATA
 const ERROR_FULL_SCALE = 0.25;
 /** Keys at or above this position on the scale get a hatch pattern, so they stand out without colour. */
-const HOT_THRESHOLD = 0.75;
+export const HOT_THRESHOLD = 0.75;
+/** Light stripes brighten the fill, so the dark key label only gains contrast under them. */
+export const HATCH_STRIPE = "#ffffff";
+export const HATCH_OPACITY = 0.5;
+export const LABEL_COLOR = "#0c0f12";
 
-function hotColor(t: number): string {
+export function hotColor(t: number): string {
   const clamped = Math.max(0, Math.min(1, t));
   const hue = 150 * (1 - clamped);
   // 60% lightness keeps the dark key label at >= 4.5:1 even on the hottest (red) fill.
@@ -121,7 +125,7 @@ export function HeatMap({
       >
         <defs>
           <pattern id={hatchId} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <line x1="0" y1="0" x2="0" y2="6" stroke="#0c0f12" strokeWidth="2" />
+            <line x1="0" y1="0" x2="0" y2="6" stroke={HATCH_STRIPE} strokeWidth="2" />
           </pattern>
         </defs>
         {KEY_LAYOUT.map((geom, i) => {
@@ -156,7 +160,7 @@ export function HeatMap({
                   height={geom.h}
                   rx={6}
                   fill={`url(#${hatchId})`}
-                  opacity={0.35}
+                  opacity={HATCH_OPACITY}
                 />
               )}
               <text
@@ -164,7 +168,7 @@ export function HeatMap({
                 y={geom.y + geom.h / 2 + labelFontSize(label) / 3}
                 textAnchor="middle"
                 fontSize={labelFontSize(label)}
-                fill={hasData ? "#0c0f12" : NO_DATA_LABEL}
+                fill={hasData ? LABEL_COLOR : NO_DATA_LABEL}
               >
                 {label}
               </text>

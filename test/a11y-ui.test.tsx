@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import App from "../src/client/App";
 import { HistoryView } from "../src/client/history/HistoryView";
-import { HeatMap } from "../src/client/components/HeatMap";
+import { HeatMap, HATCH_OPACITY, HATCH_STRIPE, LABEL_COLOR, HOT_THRESHOLD, hotColor } from "../src/client/components/HeatMap";
 import type { Keymap, Binding } from "../src/server/keymap/types";
 import type { SessionKeyStat } from "../src/shared/types";
 
@@ -136,4 +136,31 @@ test("history heat-map stepper buttons have accessible names", async () => {
   fireEvent.click(prev);
   assert.equal(prev.disabled, true);
   assert.equal(next.disabled, false);
+});
+
+function toRgb(c: string): number[] {
+  if (c.startsWith("#")) return [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+  const [h, sat, l] = (c.match(/[\d.]+/g) ?? []).map(Number).map((v, i) => (i ? v / 100 : v));
+  const a = sat * Math.min(l, 1 - l);
+  const k = (n: number) => (n + h / 30) % 12;
+  return [0, 8, 4].map((n) => 255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))));
+}
+function lum(c: number[]): number {
+  const [r, g, bl] = c.map((v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+}
+function ratio(a: number[], b2: number[]): number {
+  const [x, y] = [lum(a), lum(b2)];
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+test("key label stays >= 4.5:1 on plain and hatched fills across the hot range", () => {
+  const label = toRgb(LABEL_COLOR);
+  const stripe = toRgb(HATCH_STRIPE);
+  for (let t = HOT_THRESHOLD; t <= 1.0001; t += 0.05) {
+    const fill = toRgb(hotColor(t));
+    const under = fill.map((v, i) => v * (1 - HATCH_OPACITY) + stripe[i] * HATCH_OPACITY);
+    assert.ok(ratio(label, fill) >= 4.5, `plain fill at ${t}`);
+    assert.ok(ratio(label, under) >= 4.5, `under stripe at ${t}`);
+  }
 });
