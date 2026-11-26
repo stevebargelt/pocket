@@ -57,6 +57,7 @@ function NavButton({
   return (
     <button
       onClick={onClick}
+      aria-current={active ? "page" : undefined}
       className={`rounded px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 ${
         active
           ? "border border-accent bg-ink-surface text-ink-bright"
@@ -343,7 +344,7 @@ export default function App({
             <rect x="208.40" y="421.60" width="46" height="46" rx="7" ry="7" fill="none" stroke="currentColor" strokeWidth="5"/>
             <rect x="260.40" y="421.60" width="46" height="46" rx="7" ry="7" fill="none" stroke="currentColor" strokeWidth="5"/>
           </svg>
-          <span className="text-lg font-semibold text-accent">Pocket</span>
+          <h1 className="text-lg font-semibold text-accent">Pocket</h1>
           <span className="text-xs text-ink-muted">break in your Glove 80</span>
         </div>
         <nav className="flex gap-1">

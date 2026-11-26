@@ -104,6 +104,7 @@ export function TypingSurface({
               : st === "wrong"
                 ? "text-err underline decoration-err"
                 : "text-ink-muted";
+          // Index key is right: each span is one fixed character position of the target text.
           return (
             <span key={i} className={`${cls} ${isCurrent ? "caret" : ""}`}>
               {ch}
