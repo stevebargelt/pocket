@@ -67,6 +67,13 @@ expected to be green before merge. Tests use in-memory or temp-directory SQLite
 databases and never touch `pocket.db`. The CI job times out after 10 minutes, so
 a hung test fails fast instead of running to GitHub's 360-minute default.
 
+### Working on Pocket with the agent
+
+- Adding the `ready-for-agent` label to an issue starts the Agent workflow, which
+  opens a pull request for it.
+- An issue waits until every issue that blocks it is closed.
+- An `@claude` comment on a pull request asks the agent for changes.
+
 ## What v1 does
 
 - **Practice mode** — pick a context (v1.1, below) then practice. The original v1
