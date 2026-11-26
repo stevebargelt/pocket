@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import type { SessionKeyStat } from "../../shared/types";
 import type { Keymap } from "../../server/keymap/types";
 import { BOARD_HEIGHT, BOARD_WIDTH, KEY_LAYOUT } from "./glove80Layout";
@@ -69,6 +69,9 @@ export function HeatMap({
   }, [keyStats]);
 
   const baseLayer = keymap.layers[0];
+  const hatchId = `heat-hatch-${useId().replace(/:/g, "")}`;
+  let anyHot = false;
+  const keyValues: string[] = [];
 
   /** Position on the fast→slow / few→many errors scale (0..1), or null with no data. */
   function heatFor(stat: SessionKeyStat | undefined): number | null {
@@ -117,7 +120,7 @@ export function HeatMap({
         className="max-w-full"
       >
         <defs>
-          <pattern id="heat-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <pattern id={hatchId} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <line x1="0" y1="0" x2="0" y2="6" stroke="#0c0f12" strokeWidth="2" />
           </pattern>
         </defs>
@@ -130,6 +133,8 @@ export function HeatMap({
           const heat = heatFor(stat);
           const hasData = heat !== null;
           const isHot = heat !== null && heat >= HOT_THRESHOLD;
+          if (isHot) anyHot = true;
+          if (hasData) keyValues.push(`${label}: ${valueText(stat)}${isHot ? " (among the slowest / most errors)" : ""}`);
           return (
             <g key={i}>
               <title>{`${label || "key"}: ${valueText(stat)}${isHot ? " (hatched: among the slowest / most errors)" : ""}`}</title>
@@ -150,7 +155,7 @@ export function HeatMap({
                   width={geom.w}
                   height={geom.h}
                   rx={6}
-                  fill="url(#heat-hatch)"
+                  fill={`url(#${hatchId})`}
                   opacity={0.35}
                 />
               )}
@@ -167,6 +172,12 @@ export function HeatMap({
           );
         })}
       </svg>
+      {/* The svg is role=img, so its <title>s are not exposed; list the values for screen readers. */}
+      <ul className="sr-only" aria-label="per-key values">
+        {keyValues.map((v, i) => (
+          <li key={i}>{v}</li>
+        ))}
+      </ul>
       <div className="mt-2 flex items-center gap-2 text-xs text-ink-muted">
         <span>{metric === "speed" ? "faster" : "fewer errors"}</span>
         <div
@@ -174,7 +185,7 @@ export function HeatMap({
           style={{ background: `linear-gradient(90deg, ${hotColor(0)}, ${hotColor(1)})` }}
         />
         <span>{metric === "speed" ? "slower" : "more errors"}</span>
-        <span>· hatched keys are the slowest / most errors</span>
+        {anyHot && <span>· hatched keys are the slowest / most errors</span>}
       </div>
     </div>
   );

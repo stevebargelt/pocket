@@ -2,7 +2,7 @@
 // map that carries its values without colour.
 import { mockFetch } from "./helpers/dom";
 
-import { afterEach, beforeEach, test } from "node:test";
+import { after, afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import App from "../src/client/App";
@@ -88,7 +88,8 @@ test("heat map gives each key a value title and hatches the hottest keys", () =>
   assert.ok(titles.some((t) => t.startsWith("a: 100 ms mean latency") && !t.includes("hatched")));
   assert.ok(titles.some((t) => t.startsWith("c: 400 ms mean latency") && t.includes("hatched")));
   assert.ok(titles.some((t) => t.includes("no data")));
-  assert.equal(container.querySelectorAll('rect[fill="url(#heat-hatch)"]').length, 1);
+  assert.equal(container.querySelectorAll('rect[fill^="url(#heat-hatch"]').length, 1);
+  assert.ok(screen.getByRole("list", { hidden: true, name: "per-key values" }).textContent?.includes("c: 400 ms"));
   assert.ok(screen.getByText(/hatched keys/));
 
   fireEvent.click(screen.getByRole("button", { name: "errors" }));
@@ -112,11 +113,16 @@ test("history heat-map stepper buttons have accessible names", async () => {
     keyStats: [],
   });
   // The trend chart measures its container; jsdom has no ResizeObserver.
-  (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= class {
+  const g = globalThis as { ResizeObserver?: unknown };
+  const hadRO = "ResizeObserver" in g;
+  g.ResizeObserver ??= class {
     observe(): void {}
     unobserve(): void {}
     disconnect(): void {}
   };
+  after(() => {
+    if (!hadRO) delete g.ResizeObserver;
+  });
   mockFetch({
     "GET /api/history": [session(1), session(2)],
     "GET /api/shortcut-drills": [],
@@ -127,4 +133,7 @@ test("history heat-map stepper buttons have accessible names", async () => {
   const next = screen.getByRole("button", { name: "next session" }) as HTMLButtonElement;
   assert.equal(prev.disabled, false);
   assert.equal(next.disabled, true);
+  fireEvent.click(prev);
+  assert.equal(prev.disabled, true);
+  assert.equal(next.disabled, false);
 });
