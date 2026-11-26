@@ -45,6 +45,11 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # The agent's own pull requests are authored by claude[bot], which the action
+          # does not count as having write access, so by default it refuses to run their
+          # code. Only users with write access can start a run, and fork PRs stay blocked
+          # (allow_fork_prs defaults to false).
+          restrict_untrusted_prs: "false"
           plugin_marketplaces: https://github.com/anthropics/claude-plugins-official.git
           plugins: mattpocock-skills@claude-plugins-official
           claude_args: |
