@@ -21,7 +21,6 @@ TypeScript, run directly with `tsx`; only the client is bundled. Node 24 from
 | `scripts/` | `seed-corpus.ts` and the `curate-*.ts` corpus builders. |
 | `test/` | Every test, flat: `test/*.test.ts`, `test/*.test.tsx`, plus `helpers/` and `fixtures/keymaps/`. |
 | `docs/` | Architecture diagrams, security notes, logo SVGs. |
-| `backlog/` | Markdown work items. Not part of the app. |
 
 ## Commands
 

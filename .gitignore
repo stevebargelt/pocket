@@ -22,6 +22,6 @@ data/enron-raw/
 
 /keymaps/
 
-# forge — per-developer claude-code config (machine-local, not committed)
+# per-developer Claude Code config (machine-local, not committed)
 .claude/settings.local.json
 .claude/commands/
