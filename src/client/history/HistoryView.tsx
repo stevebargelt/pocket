@@ -168,6 +168,7 @@ function TypingHistory({ keymap }: { keymap: Keymap | null }) {
           <div className="flex items-center gap-3 text-sm">
             <button
               onClick={() => setIdx(Math.max(0, safeIdx - 1))}
+              aria-label="previous session"
               disabled={safeIdx === 0}
               className="rounded border border-ink-border px-2 py-0.5 disabled:opacity-40"
             >
@@ -179,6 +180,7 @@ function TypingHistory({ keymap }: { keymap: Keymap | null }) {
             </span>
             <button
               onClick={() => setIdx(Math.min(filtered.length - 1, safeIdx + 1))}
+              aria-label="next session"
               disabled={safeIdx === filtered.length - 1}
               className="rounded border border-ink-border px-2 py-0.5 disabled:opacity-40"
             >

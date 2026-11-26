@@ -21,6 +21,7 @@ export function useKeystrokeCapture(
   onFirstKey?: () => void,
 ): { capture: Capture; reset: () => void } {
   const bufferRef = useRef<KeystrokeBuffer>(new KeystrokeBuffer(expected));
+  // Re-render trigger only: the buffer is a mutable ref, so a counter is the simplest way to publish changes.
   const [, bump] = useState(0);
   const startedRef = useRef(false);
 

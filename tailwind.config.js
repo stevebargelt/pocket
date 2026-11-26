@@ -19,7 +19,7 @@ export default {
           bg: "#111418",
           surface: "#1a1f26",
           border: "#2a313b",
-          muted: "#6b7686",
+          muted: "#8a95a5",
           text: "#c9d3e0",
           bright: "#f0f4fa",
         },
