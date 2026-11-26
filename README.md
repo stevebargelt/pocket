@@ -71,7 +71,8 @@ a hung test fails fast instead of running to GitHub's 360-minute default.
 
 - Adding the `ready-for-agent` label to an issue starts the Agent workflow, which
   opens a pull request for it.
-- An issue waits until every issue that blocks it is closed.
+- An issue waits until every issue that blocks it is closed as completed; skips are
+  logged only in the workflow run summary.
 - An `@claude` comment on a pull request asks the agent for changes.
 
 ## What v1 does
