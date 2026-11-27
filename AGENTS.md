@@ -4,6 +4,7 @@ Pocket is a single-user, local-first typing tutor for the MoErgo Glove 80 split
 keyboard. One Node process serves a React single-page app and a JSON API on
 `http://localhost:3000` and keeps every keystroke in one SQLite file; there are no
 accounts, no cloud and no telemetry. [PRD.md](PRD.md) is the product spec.
+How issues get worked by the agent: [README.md](README.md#working-on-pocket-with-the-agent).
 
 ## Layout
 
