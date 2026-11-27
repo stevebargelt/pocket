@@ -77,7 +77,6 @@ function endFeedback(): void {
   });
 }
 
-/** Let pending fetch promises (and the state updates they trigger) settle. */
 async function renderApp(): Promise<void> {
   render(<App buildShortcutPrompts={() => [...PROMPTS]} />);
   await flush();
