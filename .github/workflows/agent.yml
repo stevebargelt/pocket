@@ -150,3 +150,22 @@ jobs:
             If you cannot get the checks green or the review clean, do not open a pull request. Instead comment
             on the issue with what you tried and where it stuck, and run
             `gh issue edit ${{ needs.gate.outputs.issue }} --remove-label ready-for-agent --add-label ready-for-human`.
+
+      # The prompt tells the agent to open a pull request or park the issue. This makes
+      # sure one of the two happened, so a run never ends silently.
+      - name: Check the result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ needs.gate.outputs.issue }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          pr=$(gh pr list --repo "$REPO" --state open --search "\"Closes #$ISSUE\" in:body" --json url --jq '.[0].url // empty')
+          if [[ -n "$pr" ]]; then echo "#$ISSUE: $pr" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          labels=$(gh api "repos/$REPO/issues/$ISSUE" --jq '[.labels[].name] | join(",")')
+          if [[ ",$labels," != *",ready-for-agent,"* ]]; then echo "#$ISSUE: parked by the agent" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          gh issue comment "$ISSUE" --repo "$REPO" --body "The agent run ended without a pull request and without saying why: $RUN_URL. Moved to ready-for-human."
+          gh issue edit "$ISSUE" --repo "$REPO" --remove-label ready-for-agent --add-label ready-for-human
+          echo "#$ISSUE: no pull request; moved to ready-for-human" | tee -a "$GITHUB_STEP_SUMMARY"
