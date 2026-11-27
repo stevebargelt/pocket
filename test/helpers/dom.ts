@@ -2,7 +2,8 @@
 //
 // Import this FIRST in a UI test file (before react-dom or Testing Library), so
 // the DOM globals exist when those modules load. It also provides a fetch mock
-// that records every call; tests must never reach a real server.
+// that records every call (tests must never reach a real server) and flush(),
+// which lets pending promises and React updates settle.
 
 import { JSDOM } from "jsdom";
 
@@ -61,4 +62,20 @@ export function mockFetch(routes: Routes): FetchCall[] {
     });
   }) as typeof fetch;
   return calls;
+}
+
+/**
+ * Let pending promises, fetch mocks and the React updates they trigger settle:
+ * five macrotask turns, each inside act().
+ *
+ * Testing Library is imported lazily so this module still sets up the DOM
+ * globals before React or Testing Library first load.
+ */
+export async function flush(): Promise<void> {
+  const { act } = await import("@testing-library/react");
+  for (let i = 0; i < 5; i++) {
+    await act(async () => {
+      await new Promise((r) => setImmediate(r));
+    });
+  }
 }

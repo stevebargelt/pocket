@@ -1,7 +1,7 @@
 // UI tests for the PKT-12 shortcut drill: jsdom + Testing Library rendering the
 // real <App />, with fetch mocked (no server) and setTimeout faked so the 400 ms
 // feedback window is driven by the test.
-import { mockFetch, type FetchCall } from "./helpers/dom";
+import { flush, mockFetch, type FetchCall } from "./helpers/dom";
 
 import { afterEach, beforeEach, mock, test } from "node:test";
 import assert from "node:assert/strict";
@@ -75,15 +75,6 @@ function endFeedback(): void {
   act(() => {
     mock.timers.tick(FEEDBACK_MS);
   });
-}
-
-/** Let pending fetch promises (and the state updates they trigger) settle. */
-async function flush(): Promise<void> {
-  for (let i = 0; i < 5; i++) {
-    await act(async () => {
-      await new Promise((r) => setImmediate(r));
-    });
-  }
 }
 
 async function renderApp(): Promise<void> {

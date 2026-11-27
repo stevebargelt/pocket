@@ -1,10 +1,10 @@
 // jsdom tests for the accessibility pass (#21): ARIA state, heading, and a heat
 // map that carries its values without colour.
-import { mockFetch } from "./helpers/dom";
+import { flush, mockFetch } from "./helpers/dom";
 
 import { after, afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import App from "../src/client/App";
 import { HistoryView } from "../src/client/history/HistoryView";
 import { HeatMap, HATCH_OPACITY, HATCH_STRIPE, LABEL_COLOR, HOT_THRESHOLD, hotColor } from "../src/client/components/HeatMap";
@@ -26,14 +26,6 @@ const STATS: SessionKeyStat[] = [
   { key: "b", meanLatencyMs: 200, errorRate: 0.05, samples: 10 },
   { key: "c", meanLatencyMs: 400, errorRate: 0.25, samples: 10 },
 ];
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 5; i++) {
-    await act(async () => {
-      await new Promise((r) => setImmediate(r));
-    });
-  }
-}
 
 beforeEach(() => {
   window.location.hash = "";
