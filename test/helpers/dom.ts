@@ -2,7 +2,8 @@
 //
 // Import this FIRST in a UI test file (before react-dom or Testing Library), so
 // the DOM globals exist when those modules load. It also provides a fetch mock
-// that records every call; tests must never reach a real server.
+// that records every call (tests must never reach a real server) and flush(),
+// which lets pending promises and React updates settle.
 
 import { JSDOM } from "jsdom";
 
