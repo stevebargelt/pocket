@@ -52,7 +52,7 @@ jobs:
       - id: hold
         run: |
           set -euo pipefail
-          gh pr edit "$PR" --repo "$REPO" --remove-label agent-review >/dev/null 2>&1 || true
+          gh pr edit "$PR" --repo "$REPO" --remove-label agent-review --remove-label needs-owner >/dev/null 2>&1 || true
           body=$(gh pr view "$PR" --repo "$REPO" --json body --jq '.body // ""')
           issue=$(grep -oiE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]+' <<<"$body" | head -1 | grep -oE '[0-9]+' || true)
           echo "issue=${issue:-none}" >> "$GITHUB_OUTPUT"
@@ -60,7 +60,9 @@ jobs:
           reason=""
           [[ "$AUTOMERGE" == true ]] || reason="this repository has not opted in to auto-merge"
           # A "Left undone" section with anything in it but "nothing"/"none".
-          undone=$(awk 'tolower($0) ~ /^#* *\**left undone/ {on=1; next} on && /^#/ {on=0} on' <<<"$body" \
+          # The section ends at the next heading, a --- rule, or the generated-by footer.
+          undone=$(awk 'tolower($0) ~ /^#* *\**left undone/ {on=1; sub(/^[^:]*[Ll]eft undone[*: ]*/, ""); print; next}
+                        on && (/^#/ || /^---/ || /Generated with/ || /claude\.ai\/code/) {on=0} on' <<<"$body" \
             | grep -viE '^\W*(nothing|none)\W*$' | grep -E '\w' || true)
           [[ -n "$reason" || -z "$undone" ]] || reason="the pull request lists work left undone"
           held=$(gh pr view "$PR" --repo "$REPO" --json files --jq '.files[].path' | grep -E "$HOLD_PATHS" | head -5 || true)
